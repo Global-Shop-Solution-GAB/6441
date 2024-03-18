@@ -1,0 +1,26 @@
+Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+'CUS: AME-HENNIG
+'ARC#6441
+' 	2021 NamLe
+
+'This program saves OpportunityID (OID) to custom table when user click on Save button on CRM Screen
+'CRM > Opportunity > SAVE / NEW OPPORTUNITY
+
+'hook#51025 => save OID to GCG_6441_HS_QQuote
+Program.Sub.Main.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	v.Local.sOppID.Declare(String)
+	
+	v.Local.sOppID.Set(v.Passed.DATA-CRM-OPPSEL)
+	
+	f.ODBC.Connection!Con.OpenCompanyConnection
+	f.Intrinsic.String.Build("insert into GCG_6441_HS_QQuote values('{0}')", v.Local.sOppID, v.Local.sSQL)
+	f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+	f.ODBC.Connection!Con.Close
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.Main.End
