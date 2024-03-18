@@ -1,0 +1,2531 @@
+﻿Program.Sub.Preflight.Start
+v.Global.sPIDFile.Declare(String)
+v.Global.sLog.Declare(String)
+v.Global.sNextCustomerID.Declare(String)
+v.Global.sError.Declare(String)
+
+v.Global.sCurrentCustomerID.Declare(String)
+v.Global.sCurrentContactName.Declare(String)
+v.Global.sCurrentContactEmail.Declare(String)
+v.Global.sCurrentDealName.Declare(String)
+v.Global.sHSDealID.Declare(String)
+v.Global.sHSDealAmount.Declare(String)
+v.Global.sOrderDate.Declare(String)
+v.Global.sCurrentHSOwner.Declare(String)
+Program.External.Include.Library("6013.lib")
+v.Global.sWebImporterDir.Declare(String)
+v.Global.sCurrentQuoteID.Declare(String)
+v.Global.sCloseDate.Declare(String)
+v.Global.dLastRun.Declare(Date)
+Program.Sub.Preflight.End
+
+'GCG6441 - HubSpot CRM Integration
+'Connect and sync transactions with HubSpot
+'Get All Newly-Created and Newly-Edited Deals in HS and GSS Opportunities, sync with each other
+'	If Customer is new, create Customer
+'	If Contact is new, create Contact
+' Run automatically with Online Update, in DB Server
+'hook#38130
+
+'	July 2021, Nam Le
+
+Program.Sub.WebImporterPreflight.Start
+'This lib file assists with using the one shot program ORDUPL. The program uses a text file located in the Global\Files directory to determine whhere to find the files to upload exist. This file has two different possible names. 
+'If there are multiple company codes that all have to have their own file location then GSSPARAMccc.txt will be used. If there is only one location, then GSSPARAM.txt should be used. Only one or the other should exist. 
+'The CORE program will always default to using GSSPARAMccc.txt if it exists. The contents of the GSSPARAM(ccc).txt file should be:
+'
+'WEB ORDER DIRECTORY   = files to be uploaded location
+'WEB ERROR DIRECTORY   = where files are copied to if there is an error
+'WEB CONVERTED DIR     = converted files copied here
+'WEB UPLOADED DIRECTORY= uploaded files copied here
+'EMAIL FROM ADDRESS    = 
+'EMAIL TO ADDRESS      = 
+'
+'In order for this lib file to work these directories must be present.
+
+'Due to the way ORDUPL functions it is not possible to add multiple calls to the datatable like other callwrappers support. It is assumed that there will be 1 row in ORDUPL and 1 row in ORDUPLExtra. Every line in ORDUPLLines will be uploaded
+'with the header and extra data that is provided.
+'
+'The ORDUPL Header datatable is structured as follows:
+'Column					=	Parameter						=	Possible Values
+'=======================================================================================================================
+'Transaction			=	Transaction Code				=	"O" for Sales Order
+'															=	"Q" for Quote
+'CustomerNo				=	Customer Number					=	"000100"
+'OrderNumber			=	Order Number					=	"0000001"
+'Freight				=	Freight							=	"0000000250" 2.50 implied decimal after 8 characters
+'TaxFreightFlag			=	Tax Freight Flag				=	"Y" or Blank
+'FreightPerPiece		=	Freight Per Piece				=	"Y" or Blank
+'OrderDueDate			=	Order Due Date					=	"CCYYMMDD"
+'OrderDate				=	Order Date						=	"CCYYMMDD"
+'UserField1Head			=	User Field 1 Header				=	30 Character String
+'UserField2Head			=	User Field 2 Header				=	30 Character String
+'UserField3Head			=	User Field 3 Header				=	30 Character String
+'UserField4Head			=	User Field 4 Header				=	30 Character String
+'UserField5Head			=	User Field 5 Header				=	30 Character String
+'UserId					=	User ID							=	8 Character String
+'CustomerPO				=	Customer Purchase Order			=	15 Character String
+'Filler1													=	15 Characters
+'FreightCurrFlag		=	Freight Currency Flag			=	"Y" or "N" or Blank
+'DataType				=	DataType						=	"S" for Shipping Data
+'ShipVia				=	Ship Via						=	20 Character String
+'Carrier				=	Carrier							=	6 Character String
+'ShipToName				=	Ship To Name					=	30 Character String
+'ShipToAddress1			=	Ship To Address 1				=	30 Character String
+'ShipToAddress2			=	Ship To Address 2				=	30 Character String
+'ShipToAddress3			=	Ship To Address 3				=	30 Character String
+'ShipToCity				=	Ship To City					=	25 Character String
+'ShipToState			=	Ship To State					=	2 Character String
+'ShipToZip				=	Ship To Zip						=	13 Character String
+'ShipToCountry			=	Ship To Country					=	3 Character String
+'ShipToAttention		=	Ship To Attention				=	30 Character String
+'Filler2													=	11 Characters
+'OrderType				=	Order Type						=	"X" For Invoice
+'															=	Space for Regular
+'															=	"T" for Transfer
+'															=	"B" for Blanket
+'OrderDiscPercentage	=	Order Discount Percentage		=	"04500" - 45% implied decimal after first character
+'Salesman				=	Salesman						=	3 Character String
+'Filler3													=	75 Characters
+'OverrideAutoNumbering	=	Override Auto Numbering			=	"1" to override
+'ShipToID				=	Ship To ID						=	6 Character String
+'MarkShipment			=	Mark Shipment					=	30 Character String
+'ContactName			=	Contact Name					=	30 Character String
+'FromLocation			= 	Order Location					= 	2 Character String
+'CashAmount				=   Cash Amount						=   000000001500000  1.50 implied decimal after 9 characters
+'Project				=   Project							= 	7 Character String
+'Filler4													=	63 Characters
+'=======================================================================================================================
+
+'The ORDUPLExtra datatable is structured as follows:
+'Column					=	Parameter						=	Possible Values
+'=======================================================================================================================
+'ShipToInternationalFlag=	Ship To International Flag		=	"Y" or blank
+'ShipToName				=	Ship To Name					=	40 Character String
+'ShipToAddress1			=	Ship To Address 1				=	40 Character String
+'ShipToAddress2			=	Ship To Address 2				=	40 Character String
+'ShipToAddress3			=	Ship To Address 3				=	40 Character String
+'ShipToAddress4			=	Ship To Address 4				=	40 Character String
+'ShipToAddress5			=	Ship To Address 5				=	40 Character String
+'ShipToCity				=	Ship To City					=	25 Character String
+'ShipToState			=	Ship To State					=	2 Character String
+'ShipToZip				=	Ship To Zip						=	13 Character String
+'ShipToCountry			=	Ship To Country					=	25 Character String
+'ShipToAttention		=	Ship To Attention				=	40 Character String
+'BillToInternationalFlag=	Bill To International Flag		=	"Y" or blank
+'BillToName				=	Bill To Name					=	40 Character String
+'BillToAddress1			=	Bill To Address 1				=	40 Character String
+'BillToAddress2			=	Bill To Address 2				=	40 Character String
+'BillToAddress3			=	Bill To Address 3				=	40 Character String
+'BillToAddress4			=	Bill To Address 4				=	40 Character String
+'BillToAddress5			=	Bill To Address 5				=	40 Character String
+'BillToCity				=	Bill To City					=	25 Character String
+'BillToState			=	Bill To State					=	2 Character String
+'BillToZip				=	Bill To Zip						=	13 Character String
+'BillToCountry			=	Bill To Country					=	25 Character String
+'BillToAttention		=	Bill To Attention				=	40 Character String
+'ContactEmail			=	Contact Email					=	100 Character String
+'ContactPhone			=	Contact Phone					=	20 Character String
+'ExtraTextLine1			=	Text Line 1						=	30 Character String
+'ExtraTextLine2			=	Text Line 2						=	30 Character String
+'ExtraTextLine3			=	Text Line 3						=	30 Character String
+'ExtraTextLine4			=	Text Line 4						=	30 Character String
+'ExtraTextLine5			=	Text Line 5						=	30 Character String
+'ExtraTextLine6			=	Text Line 6						=	30 Character String
+'ExtraTextLine7			=	Text Line 7						=	30 Character String
+'ExtraTextLine8			=	Text Line 8						=	30 Character String
+'ExtraTextLine9			=	Text Line 9						=	30 Character String
+'ExtraTextLine10		=	Text Line 10					=	30 Character String
+'TextPosition			=	Text Position					=	"H" for Header
+'															=	"F" for Footer
+'ApplyTextToSalesOrder	=	Apply Text To SalesOrder		=	"Y" or Blank
+'ApplyTextToPackList	=	Apply Text To Packlist			=	"Y" or Blank
+'ApplyTextToInvoice		=	Apply Text To Invoice			=	"Y" or Blank
+'ApplyTextToQuote		=	Apply Text To Quote				=	"Y" or Blank
+'ApplyTextToRouter		=	Apply Text To Router			=	"Y" or Blank
+'ApplyTextToWO			=	Apply Text To WO				=	"Y" or Blank
+'OrderSort				=	Order Sort						=	20 Characters
+'OrderSort2				=	Order Sort 2					=	20 Characters
+'Filler														=	1960 Characters
+'=======================================================================================================================
+
+'The ORDUPLLines datatable is structured as follows:
+'Column					=	Parameter						=	Possible Values
+'=======================================================================================================================
+'LineNumber				=	Line Number						=	"001" - Line Number 1
+'Filler1													=	1 Character
+'QtyOrdered				=	Quantity Ordered 				=	"0000000010000" - Quantity of 1 implied decimal after 9 characters
+'Weight					=	Weight							=	"0000001000" - Weight of 1 implied decimal after 7 characters
+'UM						=	Unit of Measure					=	2 Character String
+'PartNumber				=	Part Number						=	17 Character String
+'PartRev				=	Part Revision					=	3 Character String
+'Filler2													=	18 Characters
+'PartLoc				=	Part Location					=	2 Character String
+'QuotedPrice			=	Quoted Price					=	"0000000001000000" - Price of 1 implied decimal after 10 characters (if price sent must be in customer's currency)
+'OverridePrice			=	Override Price					=	"0000000001000000" - Price of 1 implied decimal after 10 characters (if price sent must be in customer's currency)
+'Cost					=	Cost							=	"0000000001000000" - Cost of 1 implied decimal after 10 characters (if cost must be in company's currency)
+'PartDesc				=	Part Description				=	30 Character String
+'PL						=	Product Line					=	3 Character String
+'LineOrderDate			=	Line Order Date					=	"CCYYMMDD"
+'LinePromiseDate		=	Line Promise Date				=	"CCYYMMDD"
+'UserField1				=	User Field 1					=	30 Character String
+'UserField2				=	User Field 2					=	30 Character String
+'UserField3				=	User Field 3					=	30 Character String
+'UserField4				=	User Field 4					=	30 Character String
+'UserField5				=	User Field 5					=	30 Character String
+'Extension				=	Extension						=	"0000000001000000" - Extension of 1 implied decimal after 10 characters (If extended amount sent must be in customer's currency)
+'NoDeliveryBeforeDate	=	No Delivery Before Date			=	"CCYYMMDD"
+'MustDeliverByDate		=	Must Deliver By Date			=	"CCYYMMDD"
+'DataType				=	Data Type						=	"T" for sales order Text
+'TextLine1				=	Text Line 1						=	30 Character String
+'TextLine2				=	Text Line 2						=	30 Character String
+'TextLine3				=	Text Line 3						=	30 Character String
+'TextLine4				=	Text Line 4						=	30 Character String
+'TextLine5				=	Text Line 5						=	30 Character String
+'TextLine6				=	Text Line 6						=	30 Character String
+'TextLine7				=	Text Line 7						=	30 Character String
+'TextLine8				=	Text Line 8						=	30 Character String
+'TextLine9				=	Text Line 9						=	30 Character String
+'TextLine10				=	Text Line 10					=	30 Character String
+'TaxStatusFlag			=	Tax Status Flag					=	"E" for Exempt
+'															=	"T" for Taxable
+'LineType				=	Line Type						=	"B" for Buyout
+'															=	"D" for Dropship
+'															=	"S" for Standard
+'															=	"C" for Consignment
+'NegativeFlag			=	Negative Flag					=	"1" Order Quantity is Negative
+'PriceFlag				=	Price Flag						=	"1" Accept Zero Price for Line
+'SufficientInvCheck		=	Sufficient Inventory Check		=	"1" Check to make sure inventory level is sufficient
+'SurveyNo				=	Survey Number					=	"00000001"
+'RouterValFlag			=	Router Validate Flag			=	"V" for Validate
+'															=	"B" for Buyout
+'															=	"N" for No Validate
+'Router					=	Router							=	20 Characters
+'RouterSeq				=	Router Sequence					=	"000001"
+'StockXRef				=	Stock Cross Reference			=	1 Character String
+'OriginalOrd			=	Original Order					=	"0000001"
+'OriginalLine			=	Original Line					=	"001"
+'Length					=	Length							=	"000000010000" - 1 Length implied decimal after 8 characters
+'Width					=	Width							=	"000000010000" - 1 Width implied decimal after 8 characters
+'CurrFlag				=	Currency Flag					=	"Y" Company's Currency
+'															=	Blank Orders Currency
+'OrderDiscPercentage	=	Order Discount Percentage		=	"00500" - 5% implied decimal after the first character
+'Filler3													=	86 Characters
+'=======================================================================================================================
+V.Global.sORDUPLError.Declare(String)
+
+F.Data.DataTable.Create("ORDUPL",True)
+F.Data.DataTable.AddColumn("ORDUPL","Transaction","String","O")
+F.Data.DataTable.AddColumn("ORDUPL","CustomerNo","String","       ")
+F.Data.DataTable.AddColumn("ORDUPL","OrderNumber","String","       ")
+F.Data.DataTable.AddColumn("ORDUPL","Freight","String","0000000000")
+F.Data.DataTable.AddColumn("ORDUPL","TaxFreightFlag","String"," ")
+F.Data.DataTable.AddColumn("ORDUPL","FreightPerPiece","String"," ")
+F.Data.DataTable.AddColumn("ORDUPL","OrderDueDate","String","00000000")
+F.Data.DataTable.AddColumn("ORDUPL","OrderDate","String","00000000")
+F.Data.DataTable.AddColumn("ORDUPL","UserField1Head","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPL","UserField2Head","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPL","UserField3Head","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPL","UserField4Head","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPL","UserField5Head","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPL","UserId","String","        ")
+F.Data.DataTable.AddColumn("ORDUPL","CustomerPO","String","               ")
+F.Data.DataTable.AddColumn("ORDUPL","Filler1","String","               ")
+F.Data.DataTable.AddColumn("ORDUPL","FreightCurrFlag","String"," ")
+F.Data.DataTable.AddColumn("ORDUPL","DataType","String","S")
+F.Data.DataTable.AddColumn("ORDUPL","ShipVia","String","                     ")
+F.Data.DataTable.AddColumn("ORDUPL","Carrier","String","      ")
+F.Data.DataTable.AddColumn("ORDUPL","ShipToName","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPL","ShipToAddress1","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPL","ShipToAddress2","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPL","ShipToAddress3","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPL","ShipToCity","String","                         ")
+F.Data.DataTable.AddColumn("ORDUPL","ShipToState","String","  ")
+F.Data.DataTable.AddColumn("ORDUPL","ShipToZip","String","             ")
+F.Data.DataTable.AddColumn("ORDUPL","ShipToCountry","String","   ")
+F.Data.DataTable.AddColumn("ORDUPL","ShipToAttention","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPL","Filler2","String","           ")
+F.Data.DataTable.AddColumn("ORDUPL","OrderType","String"," ")
+F.Data.DataTable.AddColumn("ORDUPL","OrderDiscPercentage","String","00000")
+F.Data.DataTable.AddColumn("ORDUPL","Salesman","String","   ")
+F.Data.DataTable.AddColumn("ORDUPL","Filler3","String","                                                                           ")
+F.Data.DataTable.AddColumn("ORDUPL","OverrideAutoNumbering","String"," ")
+F.Data.DataTable.AddColumn("ORDUPL","ShipToID","String","      ")
+F.Data.DataTable.AddColumn("ORDUPL","MarkShipment","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPL","ContactName","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPL","FromLocation","String","  ")
+f.Data.DataTable.AddColumn("ORDUPL","CashAmount","String","000000000000000")
+f.Data.DataTable.AddColumn("ORDUPL","Project","String","       ")
+F.Data.DataTable.AddColumn("ORDUPL","Filler4","String","?")
+
+'ORDUPLExtra
+F.Data.DataTable.Create("ORDUPLExtra",True)
+F.Data.DataTable.AddColumn("ORDUPLExtra","ShipToInternationalFlag","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ShipToName","String","                                        ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ShipToAddress1","String","                                        ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ShipToAddress2","String","                                        ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ShipToAddress3","String","                                        ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ShipToAddress4","String","                                        ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ShipToAddress5","String","                                        ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ShipToCity","String","                         ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ShipToState","String","  ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ShipToZip","String","             ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ShipToCountry","String","                         ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ShipToAttention","String","                                        ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","BillToInternationalFlag","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","BillToName","String","                                        ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","BillToAddress1","String","                                        ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","BillToAddress2","String","                                        ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","BillToAddress3","String","                                        ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","BillToAddress4","String","                                        ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","BillToAddress5","String","                                        ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","BillToCity","String","                         ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","BillToState","String","  ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","BillToZip","String","             ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","BillToCountry","String","                         ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","BillToAttention","String","                                        ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ContactEmail","String","                                                                                                    ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ContactPhone","String","                    ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ExtraTextLine1","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ExtraTextLine2","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ExtraTextLine3","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ExtraTextLine4","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ExtraTextLine5","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ExtraTextLine6","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ExtraTextLine7","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ExtraTextLine8","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ExtraTextLine9","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ExtraTextLine10","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","TextPosition","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ApplyTextToSalesOrder","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ApplyTextToPackList","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ApplyTextToInvoice","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ApplyTextToQuote","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ApplyTextToRouter","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","ApplyTextToWO","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","OrderSort","String","                    ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","OrderSort2","String","                    ")
+F.Data.DataTable.AddColumn("ORDUPLExtra","Filler","String","                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ")
+
+'ORDUPLLines
+F.Data.DataTable.Create("ORDUPLLines",True)
+F.Data.DataTable.AddColumn("ORDUPLLines","LineNumber","String","   ")
+F.Data.DataTable.AddColumn("ORDUPLLines","Filler1","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLLines","QtyOrdered","String","0000000000000")
+F.Data.DataTable.AddColumn("ORDUPLLines","Weight","String","0000000000")
+F.Data.DataTable.AddColumn("ORDUPLLines","UM","String","  ")
+F.Data.DataTable.AddColumn("ORDUPLLines","PartNumber","String","                    ")
+F.Data.DataTable.AddColumn("ORDUPLLines","PartRev","String","   ")
+F.Data.DataTable.AddColumn("ORDUPLLines","Filler2","String","                  ")
+F.Data.DataTable.AddColumn("ORDUPLLines","PartLoc","String","  ")
+F.Data.DataTable.AddColumn("ORDUPLLines","QuotedPrice","String","0000000000000000")
+F.Data.DataTable.AddColumn("ORDUPLLines","OverridePrice","String","0000000000000000")
+F.Data.DataTable.AddColumn("ORDUPLLines","Cost","String","0000000000000000")
+F.Data.DataTable.AddColumn("ORDUPLLines","PartDesc","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","PL","String","   ")
+F.Data.DataTable.AddColumn("ORDUPLLines","LineOrderDate","String","        ")
+F.Data.DataTable.AddColumn("ORDUPLLines","LinePromiseDate","String","        ")
+F.Data.DataTable.AddColumn("ORDUPLLines","UserField1","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","UserField2","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","UserField3","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","UserField4","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","UserField5","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","Extension","String","0000000000000000")
+F.Data.DataTable.AddColumn("ORDUPLLines","NoDeliveryBeforeDate","String","        ")
+F.Data.DataTable.AddColumn("ORDUPLLines","MustDeliverByDate","String","        ")
+F.Data.DataTable.AddColumn("ORDUPLLines","DataType","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLLines","TextLine1","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","TextLine2","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","TextLine3","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","TextLine4","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","TextLine5","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","TextLine6","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","TextLine7","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","TextLine8","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","TextLine9","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","TextLine10","String","                              ")
+F.Data.DataTable.AddColumn("ORDUPLLines","TaxStatusFlag","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLLines","LineType","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLLines","NegativeFlag","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLLines","PriceFlag","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLLines","SufficientInvCheck","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLLines","SurveyNo","String","00000000")
+F.Data.DataTable.AddColumn("ORDUPLLines","RouterValFlag","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLLines","Router","String","                    ")
+F.Data.DataTable.AddColumn("ORDUPLLines","RouterSeq","String","000000")
+F.Data.DataTable.AddColumn("ORDUPLLines","StockXRef","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLLines","OriginalOrd","String","       ")
+F.Data.DataTable.AddColumn("ORDUPLLines","OriginalLine","String","   ")
+F.Data.DataTable.AddColumn("ORDUPLLines","Length","String","000000000000")
+F.Data.DataTable.AddColumn("ORDUPLLines","Width","String","000000000000")
+F.Data.DataTable.AddColumn("ORDUPLLines","CurrFlag","String"," ")
+F.Data.DataTable.AddColumn("ORDUPLLines","OrderDiscPercentage","String","00000")
+F.Data.DataTable.AddColumn("ORDUPLLines","Filler3","String","                                                                                      ")
+Program.Sub.WebImporterPreflight.End
+
+Program.Sub.ORDUPLCreateFile.Start
+F.Intrinsic.Control.Try
+	V.Local.sRet.Declare(String)
+	V.Local.iCount.Declare(Long)
+	V.Local.sFileContent.Declare(String)
+	V.Local.sFileName.Declare(String)
+	V.Local.sFilePath.Declare(String)
+	V.Local.sHeader.Declare(String)
+	V.Local.sExtra.Declare(String)
+	V.Local.sDelimiter.Declare(String)
+	V.Local.sDataViewContent.Declare(String)
+	v.Local.sDate.Declare
+	v.Local.sCompanyCode.Declare
+	v.Local.sUser.Declare
+	v.Local.sQuoteNumber.Declare	
+
+	'Here we grab the file path from GSSParamccc.txt (or GSSparam.txt if GSSParamccc.txt does not exist).
+	F.Intrinsic.Control.CallSub(ORDUPLGetWebOrderDirectory)
+	V.Local.sFilePath.Set(V.Args.Path)
+	
+	'If gssparamccc.txt or gssparam.txt is not found we exit the sub
+	F.Intrinsic.Control.If(V.Local.sFilePath,=,"FILENOTFOUND")
+		V.Global.sORDUPLError.Set("FILENOTFOUND")
+		F.Intrinsic.Control.ExitSub
+	F.Intrinsic.Control.EndIf
+
+	'First we are going to pad all the fields that are in the datatables with the data that is already in it.
+	'Header
+	F.Intrinsic.Control.For(V.Local.iCount,0,V.DataTable.ORDUPL.RowCount--,1)
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).Transaction!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"Transaction",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).CustomerNo!FieldVal," ",7,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"CustomerNo",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPL(V.Local.iCount).OrderNumber!FieldVal,"0",7,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"OrderNumber",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPL(V.Local.iCount).Freight!FieldVal,"0",10,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"Freight",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).TaxFreightFlag!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"TaxFreightFlag",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).FreightPerPiece!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"FreightPerPiece",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).OrderDueDate!FieldVal," ",8,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"OrderDueDate",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).OrderDate!FieldVal," ",8,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"OrderDate",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).UserField1Head!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"UserField1Head",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).UserField2Head!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"UserField2Head",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).UserField3Head!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"UserField3Head",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).UserField4Head!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"UserField4Head",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).UserField5Head!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"UserField5Head",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).UserId!FieldVal," ",8,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"UserId",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).CustomerPO!FieldVal," ",15,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"CustomerPO",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).Filler1!FieldVal," ",15,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"Filler1",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).FreightCurrFlag!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"FreightCurrFlag",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).DataType!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"DataType",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).ShipVia!FieldVal," ",20,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"ShipVia",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).Carrier!FieldVal," ",6,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"Carrier",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).ShipToName!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"ShipToName",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).ShipToAddress1!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"ShipToAddress1",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).ShipToAddress2!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"ShipToAddress2",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).ShipToAddress3!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"ShipToAddress3",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).ShipToCity!FieldVal," ",25,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"ShipToCity",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).ShipToState!FieldVal," ",2,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"ShipToState",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).ShipToZip!FieldVal," ",13,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"ShipToZip",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).ShipToCountry!FieldVal," ",3,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"ShipToCountry",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).ShipToAttention!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"ShipToAttention",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).Filler2!FieldVal," ",11,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"Filler2",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).OrderType!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"OrderType",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPL(V.Local.iCount).OrderDiscPercentage!FieldVal,"0",5,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"OrderDiscPercentage",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).Salesman!FieldVal," ",3,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"Salesman",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).Filler3!FieldVal," ",75,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"Filler3",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).OverrideAutoNumbering!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"OverrideAutoNumbering",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).ShipToID!FieldVal," ",6,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"ShipToID",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).MarkShipment!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"MarkShipment",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).ContactName!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"ContactName",V.Local.sRet)
+		
+		f.Intrinsic.String.RPad(v.DataTable.ORDUPL(v.Local.iCount).FromLocation!FieldVal," ",2,v.Local.sRet)
+		f.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"FromLocation",V.Local.sRet)
+		
+		f.Intrinsic.String.Format(v.DataTable.ORDUPL(v.Local.iCount).CashAmount!FieldVal,"000000000.000000",v.Local.sRet)
+		f.Intrinsic.String.Replace(v.Local.sRet,".","",v.Local.sRet)
+		f.Data.DataTable.SetValue("ORDUPL",v.Local.iCount,"CashAmount",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).Project!FieldVal," ",7,v.Local.sRet)
+		f.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"Project",v.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPL(V.Local.iCount).Filler4!FieldVal," ",63,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPL",V.Local.iCount,"Filler4",V.Local.sRet)
+		
+	F.Intrinsic.Control.Next(V.Local.iCount)
+	
+	'Extra
+	F.Intrinsic.Control.For(V.Local.iCount,0,V.DataTable.ORDUPLExtra.RowCount--,1)
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ShipToInternationalFlag!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ShipToInternationalFlag",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ShipToName!FieldVal," ",40,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ShipToName",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ShipToAddress1!FieldVal," ",40,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ShipToAddress1",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ShipToAddress2!FieldVal," ",40,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ShipToAddress2",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ShipToAddress3!FieldVal," ",40,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ShipToAddress3",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ShipToAddress4!FieldVal," ",40,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ShipToAddress4",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ShipToAddress5!FieldVal," ",40,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ShipToAddress5",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ShipToCity!FieldVal," ",25,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ShipToCity",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ShipToState!FieldVal," ",2,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ShipToState",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ShipToZip!FieldVal," ",13,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ShipToZip",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ShipToCountry!FieldVal," ",25,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ShipToCountry",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ShipToAttention!FieldVal," ",40,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ShipToAttention",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).BillToInternationalFlag!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"BillToInternationalFlag",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).BillToName!FieldVal," ",40,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"BillToName",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).BillToAddress1!FieldVal," ",40,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"BillToAddress1",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).BillToAddress2!FieldVal," ",40,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"BillToAddress2",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).BillToAddress3!FieldVal," ",40,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"BillToAddress3",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).BillToAddress4!FieldVal," ",40,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"BillToAddress4",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).BillToAddress5!FieldVal," ",40,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"BillToAddress5",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).BillToCity!FieldVal," ",25,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"BillToCity",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).BillToState!FieldVal," ",2,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"BillToState",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).BillToZip!FieldVal," ",13,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"BillToZip",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).BillToCountry!FieldVal," ",25,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"BillToCountry",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).BillToAttention!FieldVal," ",40,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"BillToAttention",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ContactEmail!FieldVal," ",100,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ContactEmail",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ContactPhone!FieldVal," ",20,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ContactPhone",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ExtraTextLine1!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ExtraTextLine1",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ExtraTextLine2!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ExtraTextLine2",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ExtraTextLine3!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ExtraTextLine3",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ExtraTextLine4!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ExtraTextLine4",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ExtraTextLine5!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ExtraTextLine5",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ExtraTextLine6!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ExtraTextLine6",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ExtraTextLine7!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ExtraTextLine7",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ExtraTextLine8!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ExtraTextLine8",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ExtraTextLine9!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ExtraTextLine9",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ExtraTextLine10!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ExtraTextLine10",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).TextPosition!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"TextPosition",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ApplyTextToSalesOrder!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ApplyTextToSalesOrder",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ApplyTextToPackList!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ApplyTextToPackList",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ApplyTextToInvoice!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ApplyTextToInvoice",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ApplyTextToQuote!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ApplyTextToQuote",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ApplyTextToRouter!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ApplyTextToRouter",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).ApplyTextToWO!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"ApplyTextToWO",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).OrderSort!FieldVal," ",20,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"OrderSort",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).OrderSort2!FieldVal," ",20,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"OrderSort2",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLExtra(V.Local.iCount).Filler!FieldVal," ",1960,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLExtra",V.Local.iCount,"Filler",V.Local.sRet)
+		
+	F.Intrinsic.Control.Next(V.Local.iCount)
+	
+	'Lines
+	F.Intrinsic.Control.For(V.Local.iCount,0,V.DataTable.ORDUPLLines.RowCount--,1)
+	
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPLLines(V.Local.iCount).LineNumber!FieldVal,"0",3,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"LineNumber",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).Filler1!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"Filler1",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPLLines(V.Local.iCount).QtyOrdered!FieldVal,"0",13,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"QtyOrdered",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPLLines(V.Local.iCount).Weight!FieldVal,"0",10,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"Weight",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).UM!FieldVal," ",2,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"UM",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).PartNumber!FieldVal," ",17,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"PartNumber",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).PartRev!FieldVal," ",3,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"PartRev",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).Filler2!FieldVal," ",18,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"Filler2",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).PartLoc!FieldVal," ",2,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"PartLoc",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPLLines(V.Local.iCount).QuotedPrice!FieldVal,"0",16,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"QuotedPrice",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPLLines(V.Local.iCount).OverridePrice!FieldVal,"0",16,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"OverridePrice",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPLLines(V.Local.iCount).Cost!FieldVal,"0",16,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"Cost",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).PartDesc!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"PartDesc",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).PL!FieldVal," ",3,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"PL",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).LineOrderDate!FieldVal," ",8,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"LineOrderDate",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).LinePromiseDate!FieldVal," ",8,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"LinePromiseDate",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).UserField1!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"UserField1",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).UserField2!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"UserField2",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).UserField3!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"UserField3",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).UserField4!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"UserField4",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).UserField5!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"UserField5",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPLLines(V.Local.iCount).Extension!FieldVal,"0",16,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"Extension",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).NoDeliveryBeforeDate!FieldVal," ",8,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"NoDeliveryBeforeDate",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).MustDeliverByDate!FieldVal," ",8,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"MustDeliverByDate",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).DataType!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"DataType",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).TextLine1!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"TextLine1",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).TextLine2!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"TextLine2",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).TextLine3!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"TextLine3",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).TextLine4!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"TextLine4",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).TextLine5!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"TextLine5",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).TextLine6!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"TextLine6",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).TextLine7!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"TextLine7",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).TextLine8!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"TextLine8",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).TextLine9!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"TextLine9",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).TextLine10!FieldVal," ",30,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"TextLine10",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).TaxStatusFlag!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"TaxStatusFlag",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).LineType!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"LineType",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).NegativeFlag!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"NegativeFlag",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).PriceFlag!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"PriceFlag",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).SufficientInvCheck!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"SufficientInvCheck",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPLLines(V.Local.iCount).SurveyNo!FieldVal,"0",8,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"SurveyNo",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).RouterValFlag!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"RouterValFlag",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).Router!FieldVal," ",20,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"Router",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPLLines(V.Local.iCount).RouterSeq!FieldVal,"0",6,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"RouterSeq",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).StockXRef!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"StockXRef",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPLLines(V.Local.iCount).OriginalOrd!FieldVal,"0",7,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"OriginalOrd",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPLLines(V.Local.iCount).OriginalLine!FieldVal,"0",3,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"OriginalLine",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPLLines(V.Local.iCount).Length!FieldVal,"0",12,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"Length",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPLLines(V.Local.iCount).Width!FieldVal,"0",12,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"Width",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).CurrFlag!FieldVal," ",1,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"CurrFlag",V.Local.sRet)
+		
+		F.Intrinsic.String.LPad(V.DataTable.ORDUPLLines(V.Local.iCount).OrderDiscPercentage!FieldVal,"0",5,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"OrderDiscPercentage",V.Local.sRet)
+		
+		F.Intrinsic.String.RPad(V.DataTable.ORDUPLLines(V.Local.iCount).Filler3!FieldVal," ",86,V.Local.sRet)
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Local.iCount,"Filler3",V.Local.sRet)
+		
+	F.Intrinsic.Control.Next(V.Local.iCount)
+	
+	'The file format that ORDUPL requires is HEADER-Line-EXTRA, where HEADER and EXTRA are the same every line. To accomplish this we will make a very strange outer delimter which we will use with the DataView.ToString method.
+	'The delimiter will be EXTRA+New Line+HEADER. This will create a string which has exactly what we need for the file content except there will be no HEADER at the beginning and no EXTRA at the end. We will just append those manually.
+	
+	'Here we extract the HEADER and EXTRA from the datatables.
+	F.Data.DataView.Create("ORDUPL","ORDUPLView",22)
+	F.Data.DataView.ToString("ORDUPL","ORDUPLView","",V.Ambient.NewLine,V.Local.sHeader)
+	F.Data.DataView.Close("ORDUPL","ORDUPLView")
+	
+	F.Data.DataView.Create("ORDUPLExtra","ORDUPLExtraView",22)
+	F.Data.DataView.ToString("ORDUPLExtra","ORDUPLExtraView","",V.Ambient.NewLine,V.Local.sExtra)
+	F.Data.DataView.Close("ORDUPLExtra","ORDUPLExtraView")
+	
+	'And now we create the delimiter 
+	F.Intrinsic.String.Build("{0}{1}{2}",V.Local.sExtra,V.Ambient.NewLine,V.Local.sHeader,V.Local.sDelimiter)
+	
+	'Extract data for lines using the appropriate delimiter
+	F.Data.DataView.Create("ORDUPLLines","ORDUPLLinesView",22)
+	F.Data.DataView.ToString("ORDUPLLines","ORDUPLLinesView","",V.Local.sDelimiter,V.Local.sFileContent)
+	F.Data.DataView.Close("ORDUPLLines","ORDUPLLinesView")
+	
+	'And now manually append HEADER AND EXTRA to the file content since the first row won't have the HEADER and the last row won't have the EXTRA
+	F.Intrinsic.String.Build("{0}{1}{2}{3}",V.Local.sHeader,V.Local.sFileContent,V.Local.sExtra,V.Ambient.NewLine,V.Local.sFileContent)
+	
+	'Now we need to write the file with a unique file name. We use customer name+date+time in the file name to accomplish this. If we happen to clash with another order then the writefile sub will prevent us from overwriting the existing file
+
+	v.Local.sCompanyCode.Set(v.Caller.CompanyCode.Trim)
+	v.Local.sUser.Set(v.Caller.User.Trim)	
+	v.Local.sQuoteNumber.Set(v.Args.sQuoteNumber)
+	
+	v.Local.sDate.Set(v.Ambient.Now.FormatYYYYMMDD)
+	F.Intrinsic.String.Build("{0}{1}{2}_{3}_{4}.txt",v.Local.sQuoteNumber,v.Local.sUser,v.Caller.Terminal,v.Local.sDate.Right6,v.Ambient.Now.FormatHHNNSS,V.Local.sFileName)
+	F.Intrinsic.String.Build("{0}\{1}",v.Global.sWebImporterDir,v.Local.sFileName,V.Local.sFilePath)	
+		
+	F.Intrinsic.File.String2File(V.Local.sFilePath,V.Local.sFileContent)
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(CatchErrorORDUPL, "Sub", V.Ambient.CurrentSubroutine, "ErrNo", V.Ambient.ErrorNumber, "ErrDesc", V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.ORDUPLCreateFile.End
+
+Program.Sub.GetLastQuoteID.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	v.Local.sRet.Declare(String)
+	v.Local.lCurrentQuoteID.Declare(Long)
+	v.Local.lNextQuoteID.Declare(Long)
+	v.Local.bNumeric.Declare(Boolean)
+	v.Local.sFullQuoteID.Declare(String)
+	v.Local.sNextQuoteID.Declare(String)
+	
+'	f.ODBC.Connection!Con.ExecuteAndReturn("select F_LONG from OP_HEADER where ID='401112' and SEQUENCE='0001'", v.Local.sRet)
+	f.ODBC.Connection!Con.ExecuteAndReturn("select LEFT(LTRIM(PMAINT_USER1_TITLE),7) from OPT_RES_COM2 where FUNCT ='RS' and TYPE like '%QT%' and PMAINT_USER1_TITLE <> ''", v.Local.sRet)
+	v.Global.sCurrentQuoteID.Set(v.Local.sRet)
+	v.Local.lCurrentQuoteID.Set(v.Local.sRet)
+	f.Intrinsic.Math.Add(v.Local.lCurrentQuoteID,1,v.Local.lNextQuoteID)
+	f.Intrinsic.String.LPad(v.Local.lNextQuoteID,"0",7,v.Local.sNextQuoteID)
+	
+	'update next QuoteID
+	f.ODBC.Connection!Con.ExecuteAndReturn("select PMAINT_USER1_TITLE from OPT_RES_COM2 where FUNCT ='RS' and TYPE like '%QT%' and PMAINT_USER1_TITLE <> ''", v.Local.sRet)
+	f.Intrinsic.String.Replace(v.Local.sRet, v.Global.sCurrentQuoteID, v.Local.sNextQuoteID, v.Local.sFullQuoteID)
+	f.Intrinsic.String.Build("update OPT_RES_COM2 set PMAINT_USER1_TITLE='{0}' where FUNCT ='RS' and TYPE like '%QT%' and PMAINT_USER1_TITLE <> ''", v.Local.sFullQuoteID, v.Local.sSQL)
+	f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)	
+f.Intrinsic.Control.EndTry
+Program.Sub.GetLastQuoteID.End
+
+'Returns the path to the web order directory stored in gssparamccc.txt/gssparam.txt. If the web order directory doesn't exist it will create it. Return variable is "Path"
+Program.Sub.ORDUPLGetWebOrderDirectory.Start
+F.Intrinsic.Control.Try
+	V.Local.sGSSParamPath.Declare(String)
+	V.Local.sFileContent.Declare(String)
+	V.Local.sWebOrderDirectory.Declare(String)
+	
+	F.Intrinsic.Control.CallSub(ORDUPLGetGSSParamFile)
+	
+	V.Local.sGSSParamPath.Set(V.Args.Filepath)
+	
+	F.Intrinsic.Control.If(V.Local.sGSSParamPath,!=,"FILENOTFOUND")
+		'Here we will have a fully-qualified path to the gssparamccc.txt/gssparam.txt file. We are now going to extract the web order upload directory from the file
+		F.Intrinsic.File.File2String(V.Local.sGSSParamPath,V.Local.sFileContent)
+		
+		F.Intrinsic.String.Split(V.Local.sFileContent,"WEB ORDER DIRECTORY   =",V.Local.sFileContent)
+		F.Intrinsic.String.Split(V.Local.sFileContent(1),V.Ambient.NewLine,V.Local.sFileContent)
+		
+		V.Local.sWebOrderDirectory.Set(V.Local.sFileContent.Trim)
+			
+		'We verify that the directory exists in this sub
+		F.Intrinsic.Control.CallSub(ORDUPLCheckDirectory,"Directory",V.Local.sWebOrderDirectory)
+		
+	F.Intrinsic.Control.Else
+		'If neither gssparam file exists then we need to set the path to FILENOTFOUND to let ORDUPL sub know that no file GSSParam file was found
+		V.Local.sWebOrderDirectory.Set("FILENOTFOUND")
+	F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Variable.AddRV("Path",V.Local.sWebOrderDirectory)
+	'assign to Global Var
+	v.Global.sWebImporterDir.Set(v.Local.sWebOrderDirectory)
+	
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(CatchErrorORDUPL, "Sub", V.Ambient.CurrentSubroutine, "ErrNo", V.Ambient.ErrorNumber, "ErrDesc", V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.ORDUPLGetWebOrderDirectory.End
+
+'Returns the path to GSSParamccc.txt if it exists, GSSParam.txt if it doesn't, and "FILENOTFOUND" if neither are found. Return variable is "Filepath"
+Program.Sub.ORDUPLGetGSSParamFile.Start
+F.Intrinsic.Control.Try
+	V.Local.bFileExist.Declare(Boolean)
+	V.Local.sParamPath.Declare(String)
+	
+	'Check to see if the ccc file exists
+	F.Intrinsic.String.Build("{0}\GSSParam{1}.txt",V.Caller.FilesDir,V.Caller.CompanyCode,V.Local.sParamPath)
+	F.Intrinsic.File.Exists(V.Local.sParamPath,V.Local.bFileExist)
+	
+	F.Intrinsic.Control.If(V.Local.bFileExist.Not)
+		'If the file does not exist then GSSParam.txt must exist. If it doesn't we need to know and not run ORDUPL as the file is required by ORDUPL
+		F.Intrinsic.String.Build("{0}\GSSParam.txt",V.Caller.FilesDir,V.Local.sParamPath)
+		F.Intrinsic.File.Exists(V.Local.sParamPath,V.Local.bFileExist)
+		
+		F.Intrinsic.Control.If(V.Local.bFileExist.Not)
+			'Here we know that neither gssparamccc.txt nor gssparam.txt exist so we set Filepath to FILENOTFOUND.
+			V.Local.sParamPath.Set("FILENOTFOUND")
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Variable.AddRV("Filepath",V.Local.sParamPath)
+	
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(CatchErrorORDUPL, "Sub", V.Ambient.CurrentSubroutine, "ErrNo", V.Ambient.ErrorNumber, "ErrDesc", V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.ORDUPLGetGSSParamFile.End
+
+'Checks to see if a passed directory exists and creates it if it does not
+Program.Sub.ORDUPLCheckDirectory.Start
+F.Intrinsic.Control.Try
+	V.Local.bDirectoryExists.Declare(Boolean)
+	
+	F.Intrinsic.File.PathExists(V.Args.Directory,V.Local.bDirectoryExists)
+	
+	F.Intrinsic.Control.If(V.Local.bDirectoryExists.Not)
+		F.Intrinsic.File.CreateDir(V.Args.Directory)
+	F.Intrinsic.Control.EndIf
+	
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(CatchErrorORDUPL, "Sub", V.Ambient.CurrentSubroutine, "ErrNo", V.Ambient.ErrorNumber, "ErrDesc", V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.ORDUPLCheckDirectory.End
+
+Program.Sub.Main.Start
+
+f.Intrinsic.Control.Try
+	
+	f.Intrinsic.Control.CallSub(WebImporterPreflight)
+	
+	f.Intrinsic.Control.CallSub(AddLog, "LogMsg", "Start Log")
+	f.Intrinsic.Control.CallSub(AddLog, "LogMsg", "******************")
+	f.Intrinsic.Control.CallSub(AddLog, "LogMsg", "Program Start")
+	
+'	f.Intrinsic.Control.CallSub(RunEvery5Min)
+	
+	f.Intrinsic.Control.CallSub(CheckPID)
+	
+	'MAIN FLOWS
+	'1/ Connect to HS
+	Function.Automation.HubSpot.SetLoginInfo("21130dce-f802-401f-b015-4a191ef0238a","1c981cb2-578c-40b6-ac15-0b0867476758","GETANDREFRESH")
+'	Function.Automation.HubSpot.SetLoginInfo("079444c3-08b7-454d-bad3-3e726af89b63","757e969d-8d38-4794-8980-ff3ffa47904b","GETANDREFRESH")
+	
+	Function.Automation.HubSpot.SetConnectionString
+	
+	'2/ Connect DB
+	f.ODBC.Connection!Con.OpenCompanyConnection
+		'main flow 1: Get new deals from HS
+		f.Intrinsic.Control.CallSub(GetNewDealFromHS)
+		
+		'main flow 2: Post new quotes to HS
+		f.Intrinsic.Control.CallSub(PostQuoteToHS)
+		
+	f.ODBC.Connection!Con.Close
+	
+	f.Intrinsic.Control.CallSub(ExportLog)
+
+'catch outer try
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+
+Program.Sub.Main.End
+
+'Check and ensure 2 runs are 5min apart
+Program.Sub.RunEvery5Min.Start
+f.Intrinsic.Control.Try
+	v.Local.sFile.Declare(String)
+	v.Local.bExist.Declare(Boolean)
+	v.Local.sTimestamp.Declare(String)
+	v.Local.dLastRun.Declare(String)
+	v.Local.dNextRun.Declare(String)
+	
+	f.Intrinsic.String.Build("{0}\6441\TimeStamp", v.Caller.FilesDir, v.Local.sfile)
+	
+	'check dir
+	f.Intrinsic.File.DirExists(v.Local.sFile, v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist,=,False)
+		f.Intrinsic.File.CreateDir(v.Local.sFile)
+	f.Intrinsic.Control.EndIf
+	
+	'check file
+	v.Local.bExist.Set(False)
+	f.Intrinsic.String.Build("{0}\{1}", v.Local.sFile, "6441_lastrun.txt" ,v.Local.sFile)
+	f.Intrinsic.File.Exists(v.Local.sFile, v.Local.bExist)
+	
+	'file exists => read
+	f.Intrinsic.Control.If(v.Local.bExist,=,True)
+		'read
+		f.Intrinsic.File.File2String(v.Local.sFile, v.Local.sTimestamp)
+		v.Local.dLastRun.Set(v.Local.sTimestamp)
+		
+		f.Intrinsic.Date.DateAdd("N", 5, v.Local.dLastRun, v.Local.dNextRun)
+		
+		f.Intrinsic.Control.If(v.Local.dNextRun,>,v.Ambient.Now)
+			f.Intrinsic.Control.CallSub(Unload)
+		f.Intrinsic.Control.Else
+			'update new stamp
+			f.Intrinsic.File.String2File(v.Local.sFile, v.Ambient.Now)
+		f.Intrinsic.Control.EndIf
+		
+	'file does not exists => write
+	f.Intrinsic.Control.Else
+		f.Intrinsic.File.String2File(v.Local.sFile, v.Ambient.Now)
+	f.Intrinsic.Control.EndIf
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.RunEvery5Min.End
+
+'Check and ensure 2 runs are 2hour apart
+Program.Sub.RunEvery2H.Start
+f.Intrinsic.Control.Try
+	v.Local.sFile.Declare(String)
+	v.Local.bExist.Declare(Boolean)
+	v.Local.sTimestamp.Declare(String)
+	v.Local.dLastRun.Declare(String)
+	v.Local.dNextRun.Declare(String)
+	
+	f.Intrinsic.String.Build("{0}\6441\TimeStamp", v.Caller.FilesDir, v.Local.sfile)
+	
+	'check dir
+	f.Intrinsic.File.DirExists(v.Local.sFile, v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist,=,False)
+		f.Intrinsic.File.CreateDir(v.Local.sFile)
+	f.Intrinsic.Control.EndIf
+	
+	'check file
+	v.Local.bExist.Set(False)
+	f.Intrinsic.String.Build("{0}\{1}", v.Local.sFile, "6441_lastrun.txt" ,v.Local.sFile)
+	f.Intrinsic.File.Exists(v.Local.sFile, v.Local.bExist)
+	
+	'file exists => read
+	f.Intrinsic.Control.If(v.Local.bExist,=,True)
+		'read
+		f.Intrinsic.File.File2String(v.Local.sFile, v.Local.sTimestamp)
+		v.Local.dLastRun.Set(v.Local.sTimestamp)
+		
+		f.Intrinsic.Date.DateAdd("H", 2, v.Local.dLastRun, v.Local.dNextRun)
+		f.Intrinsic.Control.If(v.Local.dNextRun,>,v.Ambient.Now)
+			f.Intrinsic.Control.CallSub(Unload)
+		f.Intrinsic.Control.EndIf
+		
+	'file does not exists => write
+	f.Intrinsic.Control.Else
+		f.Intrinsic.File.String2File(v.Local.sFile, v.Ambient.Now)
+	f.Intrinsic.Control.EndIf
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.RunEvery2H.End
+
+'Get and Set timestamp for filtering
+Program.Sub.GetnSetTimeStamp.Start
+f.Intrinsic.Control.Try
+	v.Local.sFile.Declare(String)
+	v.Local.bExist.Declare(Boolean)
+	v.Local.sTimestamp.Declare(String)
+	v.Local.dLastRun.Declare(String)
+	v.Local.dNextRun.Declare(String)
+	
+	f.Intrinsic.String.Build("{0}\6441\TimeStamp", v.Caller.FilesDir, v.Local.sfile)
+	
+	'check dir
+	f.Intrinsic.File.DirExists(v.Local.sFile, v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist,=,False)
+		f.Intrinsic.File.CreateDir(v.Local.sFile)
+	f.Intrinsic.Control.EndIf
+	
+	'check file
+	v.Local.bExist.Set(False)
+	f.Intrinsic.String.Build("{0}\{1}", v.Local.sFile, "HS_lastrun.txt" ,v.Local.sFile)
+	f.Intrinsic.File.Exists(v.Local.sFile, v.Local.bExist)
+	
+	'file exists => read
+	f.Intrinsic.Control.If(v.Local.bExist,=,True)
+		'read
+		f.Intrinsic.File.File2String(v.Local.sFile, v.Local.sTimestamp)
+		v.Global.dLastRun.Set(v.Local.sTimestamp)
+		'update
+		f.Intrinsic.File.String2File(v.Local.sFile, v.Ambient.Now)
+		
+	'file does not exists => write
+	f.Intrinsic.Control.Else
+		v.Global.dLastRun.Set(v.Ambient.Now)
+		f.Intrinsic.File.String2File(v.Local.sFile, v.Ambient.Now)
+	f.Intrinsic.Control.EndIf
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.GetnSetTimeStamp.End
+
+program.Sub.CheckPID.Start
+
+f.Intrinsic.Control.Try
+		
+	v.Local.bExists.Declare(Boolean)	
+	v.Local.sPID.Declare(String)
+	
+	'check PID
+	f.Intrinsic.String.Build("{0}\{1}_6441PID.txt",v.Caller.FilesDir, v.Caller.CompanyCode, v.Global.sPIDFile)
+	f.Intrinsic.file.Exists(v.Global.sPIDFile,v.Local.bExists)
+	
+	'bFileExists?
+	f.Intrinsic.control.If(v.Local.bExists,=,false)
+		'no, write new
+		f.Intrinsic.File.String2File(v.Global.sPIDFile,v.Ambient.PID)	
+	'yes, read
+	f.Intrinsic.control.Else
+		f.Intrinsic.File.File2String(v.Global.sPIDFile,v.Local.sPID)
+		'bReadValueValid?
+		f.Intrinsic.Control.If(v.Local.sPID,<>,"")
+			'bPIDRunning?
+			f.Intrinsic.task.PIDRunning(v.Local.sPID,v.Local.bExists)
+			'no, write new
+			f.Intrinsic.Control.If(v.Local.bExists,=,false)
+				f.intrinsic.File.String2File(v.Global.sPIDFile,v.Ambient.PID)	
+	'				'yes, end this run, waiting for next run
+					f.Intrinsic.Control.Else
+						f.Intrinsic.Control.CallSub(Unload)
+			f.Intrinsic.Control.EndIf	
+		'no, write new
+		f.Intrinsic.Control.Else
+			f.intrinsic.File.String2File(v.Global.sPIDFile,v.Ambient.PID)
+		f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.EndIf
+
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+
+program.Sub.CheckPID.End
+
+Program.Sub.GetNewDealFromHS.Start
+f.Intrinsic.Control.Try
+	v.Local.sLog.Declare(String)
+	v.Local.sSQL.Declare(String)
+	v.Local.iCounter.Declare(Long)
+	v.Local.iCounterInner.Declare(Long)
+	v.Local.sTemp.Declare(String)
+	v.Local.sLinesIDs.Declare(String)
+	v.Local.sRet.Declare(String)
+	v.Local.sHSDealID.Declare(String)
+	v.Local.sHSContactID.Declare(String)
+	v.Local.sHSCustomerID.Declare(String)
+	v.Local.bContactExists.Declare(Boolean)
+	v.Local.bCustomerExists.Declare(Boolean)
+	v.Local.sQuoteID.Declare(String)
+	v.Local.sCustomer.Declare(String)
+	v.Local.sContactEmail.Declare(String)
+	v.Local.sOID.Declare(String)
+	v.Local.sLastRun.Declare(String)
+	
+	f.Intrinsic.Control.CallSub(GetnSetTimeStamp)
+	f.Intrinsic.String.Format(v.Global.dLastRun, "YYYY-MM-DD hh:mm:ss", v.Local.sLastRun)
+	
+	'1/ Get Deals
+'	v.Local.sSQL.Set("Select DEALID DEALID, [Deal Name] DEAL_NAME, AssociatedCompanyIds CUST_ID, AssociatedVids CONTACT_ID, [Deal owner] DEAL_OWNER, [Deal Type] DEAL_TYPE, [Expected Revenues] FORECAST_AMOUNT, [Deal Probability] PROBABILITY, [Deal Stage] DEAL_STAGE, [Original Source Type] ORG_SOURCE, [Business unit] BUSSINESS_UNITS, [Create Date] CREATE_DATE, [Close Date] CLOSE_DATE from Deals where [Deal Stage]='11866488' and AssociatedCompanyIds <> ''")
+	
+	'match Playground Field Names [Probability]
+'	v.Local.sSQL.Set("Select DEALID DEALID, [Deal Name] DEAL_NAME, AssociatedCompanyIds CUST_ID, AssociatedVids CONTACT_ID, [Deal owner] DEAL_OWNER, [Deal Type] DEAL_TYPE, [Expected Revenues] FORECAST_AMOUNT, [Probability] PROBABILITY, [Deal Stage] DEAL_STAGE, [Original Source Type] ORG_SOURCE, [Business unit] BUSSINESS_UNITS, [Create Date] CREATE_DATE, [Close Date] CLOSE_DATE from Deals where [Deal Stage]='11866488' and AssociatedCompanyIds <> ''")
+	
+	'Feb 2022 - change to get all deals from last run [Last Modified Date] >= dLastRunTime
+	f.Intrinsic.String.Build("Select DEALID DEALID, [Deal Name] DEAL_NAME, AssociatedCompanyIds CUST_ID, AssociatedVids CONTACT_ID, [Deal owner] DEAL_OWNER, [Deal Type] DEAL_TYPE, [Expected Revenues] FORECAST_AMOUNT, [Probability] PROBABILITY, [Deal Stage] DEAL_STAGE, [Original Source Type] ORG_SOURCE, [Business unit] BUSSINESS_UNITS, [Create Date] CREATE_DATE, [Close Date] CLOSE_DATE, [Deal Description] DEAL_DESCRIPTION from Deals where [Last Modified Date] >= '{0}' and AssociatedCompanyIds <> ''", v.Local.sLastRun, v.Local.sSQL)
+	
+	f.Intrinsic.Control.if(v.DataTable.dtDeals.Exists)
+		f.Data.DataTable.Close("dtDeals")
+	f.Intrinsic.Control.EndIf
+	
+	Function.Automation.HubSpot.SelectToDatatable("dtDeals","True",v.Local.sSQL)
+	'log
+	f.Intrinsic.String.Build("Found {0} new Deals from HubSpot", v.DataTable.dtDeals.RowCount, v.Local.sLog)
+	f.Intrinsic.Control.CallSub(AddLog, "LogMsg", v.Local.sLog)
+
+	'2/ Loop thru and get Deals info
+	f.Intrinsic.Control.If(v.DataTable.dtDeals.RowCount,<,1)
+		'no record
+		f.Intrinsic.Control.CallSub(AddLog, "LogMsg", "No new Deal found!")
+		f.Intrinsic.Control.ExitSub
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.Control.For(v.Local.iCounter, 0, v.DataTable.dtDeals.RowCount--, 1)
+		
+		f.Intrinsic.Control.Try
+		
+			v.Local.sHSDealID.Set(v.DataTable.dtDeals(v.Local.iCounter).DEALID!FieldValTrim)
+			v.Local.sHSContactID.Set(v.DataTable.dtDeals(v.Local.iCounter).CONTACT_ID!FieldValTrim)
+			v.Local.sHSCustomerID.Set(v.DataTable.dtDeals(v.Local.iCounter).CUST_ID!FieldValTrim)
+			v.Global.sCurrentDealName.Set(v.DataTable.dtDeals(v.Local.iCounter).DEAL_NAME!FieldValTrim)
+			v.Global.sHSDealAmount.Set(v.DataTable.dtDeals(v.Local.iCounter).FORECAST_AMOUNT!FieldValTrim)
+			v.Global.sHSDealID.Set(v.DataTable.dtDeals(v.Local.iCounter).DEALID!FieldValTrim)
+			v.Global.sOrderDate.Set(v.DataTable.dtDeals(v.Local.iCounter).CREATE_DATE!FieldValTrim)
+			v.Global.sCurrentHSOwner.Set(v.DataTable.dtDeals(v.Local.iCounter).DEAL_OWNER!FieldValTrim)
+			
+			f.Intrinsic.String.Build("Working on Deals#{0} by Contact#{1} of Company#{2}", v.Local.sHSDealID, v.Local.sHSContactID, v.Local.sHSCustomerID, v.Local.sLog)
+			f.Intrinsic.Control.CallSub(AddLog, "LogMsg", v.Local.sLog)
+			
+			'HS Contact Info 
+			f.Intrinsic.Control.If(v.Local.sHSContactID,=,"")
+			'Deal without a contact
+				'5/ Check if Customer is new
+				f.Intrinsic.String.Build("Select RTRIM(COMP_ID) CUSTOMER from GCG_6441_HS_CUSTOMER_REF where HS_COMP_ID = '{0}'", v.Local.sHSCustomerID, v.Local.sSQL)
+				
+				f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+				
+				f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF)
+					v.Local.bCustomerExists.Set(False)
+					'5AA/ Create Customer
+					'HS Company Info
+					f.Intrinsic.String.Build("Select top 1 CompanyId COMPANY_ID, [Company Name] CUSTOMER_NAME, TYPE CUSTOMER_TYPE, [Company owner] COMPANY_OWNER, [Street Address] ADDRESS1, [Street Address 2] ADDRESS2, [State/Region] STATE_REGION, [Postal Code] ZIP_CODE, [Phone Number] PHONE, CITY, [Company Domain Name] DOMAIN_NAME from Companies where CompanyId = {0}", v.Local.sHSCustomerID, v.Local.sSQL)
+					
+					f.Intrinsic.Control.if(v.DataTable.dtCustomer.Exists)
+						f.Data.DataTable.Close("dtCustomer")
+					f.Intrinsic.Control.EndIf
+	
+					Function.Automation.HubSpot.SelectToDatatable("dtCustomer","True",v.Local.sSQL)
+					
+					'log
+					f.Intrinsic.String.Build("Found New Customer {0}. Creating Customer in GSS.", v.DataTable.dtCustomer(0).CUSTOMER_NAME!FieldValTrim, v.Local.sLog)
+					f.Intrinsic.Control.CallSub(AddLog, "LogMsg", v.Local.sLog)
+					
+					'CREATE CUSTOMER from DT and return CustomerID
+					f.Intrinsic.Control.CallSub(CreateCustomer, "argHSCustomerID", v.Local.sHSCustomerID)
+				f.Intrinsic.Control.Else
+					v.Global.sCurrentCustomerID.Set(v.Local.sRet)
+				f.Intrinsic.Control.EndIf
+			'Deal with a Contact
+			f.Intrinsic.Control.Else
+				'multiple contacts
+				f.Intrinsic.String.Split(v.Local.sHSContactID,",", v.Local.sTemp)
+				v.Local.sHSContactID.Set(v.Local.sTemp(0))
+				
+				f.Intrinsic.String.Build("Select top 1 VID CONTACT_ID, [First Name] FIRST_NAME, [Last Name] LAST_NAME, Email EMAIL, [Job Title] JOB_TITLE, [Phone Number] PHONE_NUMBER, [Mobile Phone Number] MOBILE_PHONE from Contacts where VID={0}", v.Local.sHSContactID, v.Local.sSQL)
+				f.Intrinsic.Control.If(v.DataTable.dtContact.Exists)
+					f.Data.DataTable.Close("dtContact")
+				f.Intrinsic.Control.EndIf
+				Function.Automation.HubSpot.SelectToDatatable("dtContact","True",v.Local.sSQL)
+				v.Global.sCurrentContactEmail.Set(v.DataTable.dtContact(0).EMAIL!FieldValTrim)
+				
+				'4/ Check if Contact is new
+				f.Intrinsic.String.Build("Select * from GCG_6441_HS_CONT_REF where HS_CONT_ID = '{0}' and HS_COMP_ID = '{1}'", v.Local.sHSContactID, v.Local.sHSCustomerID, v.Local.sSQL)
+				f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	
+				f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF)
+					'4A/ contact does not exist in XREF
+					v.Local.bContactExists.Set(False)
+					v.Local.sContactEmail.Set(v.DataTable.dtContact(0).EMAIL!FieldValTrim)
+					
+					'check and match contact by email
+					f.Intrinsic.String.Build("select top 1 RTRIM(CUST) from V_CONTACT where EMAIL1='{0}'", v.Local.sContactEmail, v.Local.sSQL)
+					
+					f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+					
+					'Contact Exists
+					f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF,=,false)
+					
+						v.Global.sCurrentCustomerID.Set(v.Local.sRet)
+						'Update Xref
+						
+						f.Intrinsic.String.Build("insert into GCG_6441_HS_CONT_REF values ('','{0}','{1}','{2}','{3} {4}','{5}')", v.Global.sCurrentCustomerID, v.Local.sHSContactID, v.Local.sHSCustomerID, v.DataTable.dtContact(0).FIRST_NAME!FieldValTrim, v.DataTable.dtContact(0).LAST_NAME!FieldValTrim, v.DataTable.dtContact(0).EMAIL!FieldValTrim, v.Local.sSQL)
+						
+	'					f.ODBC.Connection!Con.Execute(v.Local.sSQL.PSQLFriendly)
+						f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+					
+					'Contact does not exist
+					f.Intrinsic.Control.Else
+					
+						'5/ Check if Customer is new
+						f.Intrinsic.String.Build("Select RTRIM(COMP_ID) CUSTOMER from GCG_6441_HS_CUSTOMER_REF where HS_COMP_ID = '{0}'", v.Local.sHSCustomerID, v.Local.sSQL)
+						
+						f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+						
+						f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF)
+							v.Local.bCustomerExists.Set(False)
+							'5AA/ Create Customer
+							'HS Company Info
+							f.Intrinsic.String.Build("Select top 1 CompanyId COMPANY_ID, [Company Name] CUSTOMER_NAME, TYPE CUSTOMER_TYPE, [Company owner] COMPANY_OWNER, [Street Address] ADDRESS1, [Street Address 2] ADDRESS2, [State/Region] STATE_REGION, [Postal Code] ZIP_CODE, [Phone Number] PHONE, CITY, [Company Domain Name] DOMAIN_NAME from Companies where CompanyId = {0}", v.Local.sHSCustomerID, v.Local.sSQL)
+							
+							f.Intrinsic.Control.if(v.DataTable.dtCustomer.Exists)
+								f.Data.DataTable.Close("dtCustomer")
+							f.Intrinsic.Control.EndIf
+			
+							Function.Automation.HubSpot.SelectToDatatable("dtCustomer","True",v.Local.sSQL)
+							
+							'log
+							f.Intrinsic.String.Build("Found New Customer {0}. Creating Customer in GSS.", v.DataTable.dtCustomer(0).CUSTOMER_NAME!FieldValTrim, v.Local.sLog)
+							f.Intrinsic.Control.CallSub(AddLog, "LogMsg", v.Local.sLog)
+							
+							'CREATE CUSTOMER from DT and return CustomerID
+							f.Intrinsic.Control.CallSub(CreateCustomer, "argHSCustomerID", v.Local.sHSCustomerID)
+						
+							'5AB/ Create Contact
+							
+							'log
+							f.Intrinsic.String.Build("Found New Contact {0} {1} from {2}. Creating Contact in GSS.", v.DataTable.dtContact(0).FIRST_NAME!FieldValTrim, v.DataTable.dtContact(0).LAST_NAME!FieldValTrim, v.DataTable.dtCustomer(0).CUSTOMER_NAME!FieldValTrim, v.Local.sLog)
+							f.Intrinsic.Control.CallSub(AddLog, "LogMsg", v.Local.sLog)
+							
+							'CREATE CONTACT from DT
+							f.Intrinsic.Control.CallSub(SaveContactToDb)
+							
+							'Update Xref
+							f.Intrinsic.String.Build("insert into GCG_6441_HS_CONT_REF values ('','{0}','{1}','{2}','{3} {4}', '{5}')", v.Global.sCurrentCustomerID, v.Local.sHSContactID, v.Local.sHSCustomerID, v.DataTable.dtContact(0).FIRST_NAME!FieldValTrim, v.DataTable.dtContact(0).LAST_NAME!FieldValTrim, v.DataTable.dtContact(0).EMAIL!FieldValTrim, v.Local.sSQL)
+							f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+							
+						'5B/ Customer exists
+						f.Intrinsic.Control.Else
+							v.Local.bCustomerExists.Set(True)
+							v.Global.sCurrentCustomerID.Set(v.Local.sRet)
+							
+							'5BA/ Create Contact
+							f.Intrinsic.Control.CallSub(SaveContactToDb)
+							
+							'Update Xref
+			'				v.Local.sCustomer.Set(v.Local.sRet)
+							f.Intrinsic.String.Build("insert into GCG_6441_HS_CONT_REF values ('','{0}','{1}','{2}','{3} {4}', '{5}')", v.Global.sCurrentCustomerID, v.Local.sHSContactID, v.Local.sHSCustomerID, v.DataTable.dtContact(0).FIRST_NAME!FieldValTrim, v.DataTable.dtContact(0).LAST_NAME!FieldValTrim, v.DataTable.dtContact(0).EMAIL!FieldValTrim, v.Local.sSQL)
+							f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+							
+						f.Intrinsic.Control.EndIf		
+	
+					f.Intrinsic.Control.EndIf
+				
+				'4B/ Contact exists
+				f.Intrinsic.Control.Else
+					v.Local.bContactExists.Set(True)
+					f.Intrinsic.String.Split(v.Local.sRet, "*!*", v.Local.sRet)
+					v.Global.sCurrentCustomerID.Set(v.Local.sRet(1))
+				f.Intrinsic.Control.EndIf
+				
+			f.Intrinsic.Control.EndIf
+			
+			'6/ Check if Quote exists!
+			f.Intrinsic.String.Build("select QUOTE_NO from GCG_6441_HS_QT_HDR_XREF where HS_DEALID='{0}'", v.Local.sHSDealID, v.Local.sSQL)
+			
+			f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+			
+			f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF)
+				'6/ Create Opp
+				f.Intrinsic.Control.CallSub(CreateOpportunity, "argIndex", v.Local.iCounter)
+				
+				'update XRef
+				f.Intrinsic.String.Build("select top 1 OID from CRM_OPP_MASTER where RTRIM(ODESC)='{0}' order by OID desc", v.Global.sCurrentDealName, v.Local.sSQL)
+				f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+				f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF,=,False)
+					f.Intrinsic.String.Build("insert into GCG_6441_HS_QT_HDR_XREF values('{0}','{1}')", v.Local.sRet, v.Local.sHSDealID, v.Local.sSQL)
+					f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+				f.Intrinsic.Control.EndIf
+				
+			f.Intrinsic.Control.Else
+				'exist => Update
+				v.Local.sOID.Set(v.Local.sRet)
+				'TO-DO:
+				'get info and update CRM_OPP_MASTER
+				f.Intrinsic.Control.CallSub(UpdateOpportunity, "argIndex", v.Local.iCounter, "argOID", v.Local.sOID)
+	
+			f.Intrinsic.Control.EndIf
+		
+		'catch inner try
+		f.Intrinsic.Control.Catch
+			f.Intrinsic.Control.CallSub(Catching)
+		f.Intrinsic.Control.EndTry
+	
+	f.Intrinsic.Control.Next(v.Local.iCounter)
+
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.GetNewDealFromHS.End
+
+Program.Sub.CreateQuote.Start
+f.Intrinsic.Control.Try
+	v.Local.sLog.Declare(String)
+	v.Local.sSQL.Declare(String)
+	v.Local.dCreateDate.Declare(String)
+	v.Local.sCreateDate.Declare(String)
+	v.Local.sRet.Declare(String)
+	v.Local.sAddress1.Declare(String)
+	v.Local.sAddress2.Declare(String)
+	v.Local.sCity.Declare(String)
+	v.Local.sState.Declare(String)
+	v.Local.sZip.Declare(String)
+	v.Local.sCountry.Declare(String)
+	v.Local.sAttention.Declare(String)
+	
+	v.Local.sAddress1_ShipTo.Declare(String)
+	v.Local.sAddress2_ShipTo.Declare(String)
+	v.Local.sCity_ShipTo.Declare(String)
+	v.Local.sState_ShipTo.Declare(String)
+	v.Local.sZip_ShipTo.Declare(String)
+	v.Local.sCountry_ShipTo.Declare(String)
+	v.Local.sAttention_ShipTo.Declare(String)
+	v.Local.sContactName.Declare(String)
+	v.Local.sSalesperson.Declare(String)
+	v.Local.sPhone.Declare(String)
+	
+	f.Intrinsic.Date.ConvertDString(v.Global.sOrderDate, "MM/DD/YYYY", v.Local.dCreateDate)
+	f.Intrinsic.String.Format(v.Local.dCreateDate, "YYYYMMDD", v.Local.sCreateDate)
+	
+	'reset ORDUPL
+	f.Data.Datatable.DeleteRow("ORDUPL", -1)
+	f.Data.Datatable.DeleteRow("ORDUPLExtra", -1)
+	f.Data.Datatable.DeleteRow("ORDUPLLines", -1)
+	f.Data.Datatable.AcceptChanges("ORDUPL")
+	f.Data.Datatable.AcceptChanges("ORDUPLExtra")
+	f.Data.Datatable.AcceptChanges("ORDUPLLines")
+	
+	'get QuoteID
+	v.Global.sCurrentQuoteID.Set("")
+	f.Intrinsic.Control.CallSub(GetLastQuoteID)
+	
+	'Salesperson
+	f.Intrinsic.String.Build("select top 1 RTRIM(SALESPERSONCODE) from GCG_6441_DEALOWNER where RTRIM(OWNERID)='{0}'", v.Global.sCurrentHSOwner, v.Local.sSQL)
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sSalesperson)
+	
+	f.Intrinsic.Control.If(v.DataTable.dtContact.Exists)
+		f.Intrinsic.String.Build("{0} {1}", v.DataTable.dtContact(0).FIRST_NAME!FieldValTrim, v.DataTable.dtContact(0).LAST_NAME!FieldValTrim, v.Local.sContactName)
+		f.Intrinsic.String.Replace(v.DataTable.dtContact(0).PHONE_NUMBER.FieldValTrim, "-", "", v.Local.sPhone)
+		f.Intrinsic.String.Replace(v.Local.sPhone, " ","", v.Local.sPhone)
+		f.Data.DataTable.AddRow("ORDUPLExtra", "ContactEmail", v.DataTable.dtContact(0).EMAIL!FieldValTrim, "ContactPhone", v.Local.sPhone)
+	f.Intrinsic.Control.EndIf
+
+	f.Intrinsic.Control.If(v.Global.sHSDealAmount,=,"")
+		v.Global.sHSDealAmount.Set(0)
+	f.Intrinsic.Control.EndIf
+	
+	f.Data.DataTable.AddRow("ORDUPL", "TRANSACTION", "Q", "CustomerNo", v.Global.sCurrentCustomerID.Trim, "OrderNumber", v.Global.sCurrentQuoteID, "OrderDate", v.Local.sCreateDate, "UserField1Head", v.Global.sHSDealAmount, "UserField2Head", v.Global.sHSDealID,"CustomerPO", v.Global.sCurrentDealName, "ContactName", v.Local.sContactName, "UserField3Head", v.Global.sCurrentDealName, "Salesman", v.Local.sSalesperson, "FromLocation", "HS", "OrderDueDate", v.Local.sCreateDate, "OverrideAutoNumbering","1")
+	
+	'live
+	f.Data.DataTable.AddRow("ORDUPLLines", "LineNumber", "001", "QtyOrdered", "0000000020000", "PartNumber", "8801242", "OverridePrice", "0000000001000000", "UM", "EA", "PARTLOC", "HS", "LineOrderDate", "20210722", "LinePromiseDate", "20210801")
+	
+	'test
+'	f.Data.DataTable.AddRow("ORDUPLLines", "LineNumber", "001", "QtyOrdered", "0000000020000", "PartNumber", "0025", "OverridePrice", "0000000001000000", "UM", "EA", "PARTLOC", "", "LineOrderDate", "20210722", "LinePromiseDate", "20210801")
+
+#Region "extra"
+
+'	f.Data.DataTable.RemoveColumn("ORDUPLLines","EXTENDED")
+'	F.Data.DataTable.RemoveColumn("ORDUPLLines","QTY")
+'	F.Data.DataTable.RemoveColumn("ORDUPLLines","PRICE")
+'	F.Data.DataTable.RemoveColumn("ORDUPLLines","CostDisplay")	
+
+#End Region ' extra
+
+	f.Intrinsic.Control.CallSub(ORDUPLCreateFile,"sQuoteNumber",v.Global.sCurrentQuoteID)
+	f.Intrinsic.UI.Sleep(1)
+	F.Global.General.CallWrapperSync(50,"ORDUPL")
+
+	'Delete dummy Quote line
+	f.Intrinsic.String.Build("delete from QUOTE_LINES where record_no='0010' and QUOTE_NO in (Select QUOTE_NO from V_QUOTE_HEADER where USER_2='{0}')", v.Global.sHSDealID, v.Local.sSQL)
+	
+	f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+		
+	'log
+	f.Intrinsic.String.Build("Creating Quote#{0} in GSS", v.Global.sCurrentDealName, v.Local.sLog)
+	f.Intrinsic.Control.CallSub(AddLog, "LogMsg", v.Local.sLog)
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.CreateQuote.End
+
+Program.Sub.CreateOpportunity.Start
+f.Intrinsic.Control.Try
+	v.Local.sDealID.Declare(String)
+	v.Local.sDealName.Declare(String)
+	v.Local.sCustID.Declare(String)
+	v.Local.sContactID.Declare(String)
+	v.Local.DealOwner.Declare(String)
+	v.Local.sDealType.Declare(String)
+	v.Local.sAmount.Declare(String)
+	v.Local.sProbability.Declare(String)
+	v.Local.sBusinessUnitFunnel.Declare(String)
+	v.Local.sCreateDate.Declare(String)
+	v.Local.sDueDate.Declare(String)
+	v.Local.iIndex.Declare(Long)
+	v.Local.sSQL.Declare(String)
+	v.Local.sRet.Declare(String)
+	v.Local.sOppDesc.Declare(String)
+	v.Local.sLeadSource.Declare(String)
+	v.Local.iRetID.Declare(Long)
+	v.Local.sFunnelID.Declare(String)
+	v.Local.sProbID.Declare(String)
+	v.Local.sStatusID.Declare(String)
+	v.Local.sTypeID.Declare(String)
+	v.Local.sLeadSourceID.Declare(String)
+	v.Local.sSalesPersonCode.Declare(String)
+	v.Local.sExpDate.Declare(String)
+	v.Local.iIndex.Set(v.Args.argIndex)
+	v.Local.sDealStage.Declare(String)
+	v.Local.bHasDealID.Declare(Boolean)
+	v.Local.sDealDesc.Declare(String)
+	v.Local.sOID.Declare(String)
+	v.Local.sInternalAssign.Declare(String)
+	
+	v.Local.sDealID.Set(v.DataTable.dtDeals(v.Local.iIndex).DEALID!FieldvalTrim)
+	v.Local.sDealName.Set(v.DataTable.dtDeals(v.Local.iIndex).DEAL_NAME!FieldvalTrim)
+	v.Local.DealOwner.Set(v.DataTable.dtDeals(v.Local.iIndex).DEAL_OWNER!FieldvalTrim)
+	v.Local.sDealType.Set(v.DataTable.dtDeals(v.Local.iIndex).DEAL_TYPE!FieldvalTrim)
+	v.Local.sAmount.Set(v.DataTable.dtDeals(v.Local.iIndex).FORECAST_AMOUNT!FieldvalTrim)
+	v.Local.sProbability.Set(v.DataTable.dtDeals(v.Local.iIndex).PROBABILITY!FieldvalTrim)
+	v.Local.sBusinessUnitFunnel.Set(v.DataTable.dtDeals(v.Local.iIndex).BUSSINESS_UNITS!FieldvalTrim)
+	v.Local.sLeadSource.Set(v.DataTable.dtDeals(v.Local.iIndex).ORG_SOURCE!FieldvalTrim)
+	v.Local.sDealStage.Set(v.DataTable.dtDeals(v.Local.iIndex).DEAL_STAGE!FieldvalTrim)
+	v.Local.sDealDesc.Set(v.DataTable.dtDeals(v.Local.iIndex).DEAL_DESCRIPTION!FieldvalTrim)
+
+	f.Intrinsic.String.Format(v.DataTable.dtDeals(v.Local.iIndex).CLOSE_DATE!FieldvalTrim,"MM/DD/YYYY", v.Local.sDueDate)
+	f.Intrinsic.String.Format(v.DataTable.dtDeals(v.Local.iIndex).CLOSE_DATE!FieldvalTrim,"YYYY-MM-DD", v.Local.sExpDate)
+	f.Intrinsic.String.Format(v.DataTable.dtDeals(v.Local.iIndex).CREATE_DATE!FieldvalTrim,"YYYY-MM-DD", v.Local.sCreateDate)
+	
+	f.Intrinsic.Control.If(v.Local.sExpDate,=,"")
+		v.Local.sExpDate.Set("NULL")
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.Control.If(v.Local.sCreateDate,=,"")
+		v.Local.sCreateDate.Set("NULL")
+	f.Intrinsic.Control.EndIf
+	
+	'Deal/Opp Name
+	f.Intrinsic.String.IsInString(v.Global.sCurrentDealName, v.Local.sDealID, True, v.Local.bHasDealID)
+	f.Intrinsic.Control.If(v.Local.bHasDealID,=,False)
+		f.Intrinsic.String.Build("[{0}] {1}", v.Local.sDealID, 	v.Global.sCurrentDealName, 	v.Global.sCurrentDealName)
+	f.Intrinsic.Control.EndIf
+	
+	'find contact ID
+	f.Intrinsic.String.Build("select ALT_ID from V_CONTACT where EMAIL1 = '{0}'", v.Global.sCurrentContactEmail, v.Local.sSQL)
+	v.Local.sRet.Set("")
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	v.Local.sContactID.Set(v.Local.sRet)
+	
+	'find Funnel ID
+	f.Intrinsic.String.Build("select SEQ from CRM_OPP_FUNNEL where RTRIM(VALUE)='{0}'", v.Local.sBusinessUnitFunnel, v.Local.sSQL)
+	v.Local.sRet.Set("")
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	v.Local.sFunnelID.Set(v.Local.sRet)
+	
+	'find Prob
+	f.Intrinsic.Control.If(v.Local.sFunnelID,!=,"")
+		f.Intrinsic.String.Build("select ID from CRM_OPP_PROB where FUNNELID='{0}' and RTRIM(VALUE)='{1}'", v.Local.sFunnelID, v.Local.sProbability, v.Local.sSQL)
+		'match Playground's value
+		f.Intrinsic.String.Replace(v.Local.sProbability,"%","", v.Local.sProbability)
+		f.Intrinsic.String.Build("select ID from CRM_OPP_PROB where FUNNELID='{0}' and PROBABILITY='{1}'", v.Local.sFunnelID, v.Local.sProbability, v.Local.sSQL)
+		v.Local.sRet.Set("")
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+		v.Local.sProbID.Set(v.Local.sRet)	
+	f.Intrinsic.Control.Else
+		v.Local.sFunnelID.Set("0")
+		v.Local.sProbID.Set("0")
+	f.Intrinsic.Control.EndIf
+	
+	'find LeadSource
+	f.Intrinsic.Control.SelectCase(v.Local.sLeadSource)
+		f.Intrinsic.Control.Case("ORGANIC_SEARCH")
+			v.Local.sLeadSource.Set("Organic Search")
+		f.Intrinsic.Control.Case("PAID_SEARCH")
+			v.Local.sLeadSource.Set("Paid Search")
+		f.Intrinsic.Control.Case("EMAIL_MARKETING")
+			v.Local.sLeadSource.Set("Email Marketing")
+		f.Intrinsic.Control.Case("SOCIAL_MEDIA")
+			v.Local.sLeadSource.Set("Organic Social")
+		f.Intrinsic.Control.Case("REFERRALS")
+			v.Local.sLeadSource.Set("Referrals")
+		f.Intrinsic.Control.Case("OTHER_CAMPAIGNS")
+			v.Local.sLeadSource.Set("Other Campaigns")
+		f.Intrinsic.Control.Case("DIRECT_TRAFFIC")
+			v.Local.sLeadSource.Set("Direct Traffic")
+		f.Intrinsic.Control.Case("OFFLINE")
+			v.Local.sLeadSource.Set("Offline Sources")
+		f.Intrinsic.Control.Case("PAID_SOCIAL")
+			v.Local.sLeadSource.Set("Paid Social")
+		f.Intrinsic.Control.CaseElse
+			v.Local.sLeadSource.Set("Other Campaigns")
+	f.Intrinsic.Control.EndSelect
+	
+	f.Intrinsic.String.Build("select SEQ from CRM_OPP_LEADSOURCE where RTRIM(VALUE)='{0}'", v.Local.sLeadSource, v.Local.sSQL)
+	v.Local.sRet.Set("")
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	v.Local.sLeadSourceID.Set(v.Local.sRet)
+	
+	'find SalesPerson
+	f.Intrinsic.String.Build("select SALESPERSONCODE from GCG_6441_DEALOWNER where RTRIM(OWNERID)='{0}'", v.Local.DealOwner, v.Local.sSQL)
+	v.Local.sRet.Set("")
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	v.Local.sSalesPersonCode.Set(v.Local.sRet)
+	
+	
+	'TO-DO: switch sDealType and get ID for given value
+	'type: existing/new business
+	v.Local.sDealType.Set("9")
+	
+	'Status-Stage - Match by Mappings - HS ID => Get ID
+	v.Local.sStatusID.Set("")
+	f.Intrinsic.String.Build("select RTRIM(STATUSID) from GCG_6441_STAGE_STTS where RTRIM(STAGEID)='{0}'", v.Local.sDealStage.Trim, v.Local.sSQL)
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sStatusID)
+	f.Intrinsic.Control.If(v.Local.sStatusID,=,"")
+		'if not found if REF, set Default
+		v.Local.sStatusID.Set("32769")
+	f.Intrinsic.Control.EndIf
+	
+	'Internal Assign
+	f.Intrinsic.Control.SelectCase(v.Local.sBusinessUnitFunnel.Trim)
+		f.Intrinsic.Control.CaseAny("Chip Conveyor", "Coolant Filtration", "Coolant Tank")
+			v.Local.sInternalAssign.Set("DONKAHLE")
+		f.Intrinsic.Control.CaseAny("Telescopic Steel Covers (TSC)", "Bellow Covers", "Telescopic Springs", "Wiper Systems (TSC)", "Wiper Systems (Other)", "Lift-Table Bellows", "Service & Repair")
+			v.Local.sInternalAssign.Set("ENOCH")
+		f.Intrinsic.Control.CaseAny("Apron/Roll-up Covers", "Walk-on/Pit Covers", "XY Shield (Face Shield)", "Cable Carriers", "Machine Roof Bellow Covers")
+			v.Local.sInternalAssign.Set("BROCK")
+		f.Intrinsic.Control.CaseAny("Machine Enclosures", "Platforms/Stairs/Guarding/Fencing")
+			v.Local.sInternalAssign.Set("KEN")
+		f.Intrinsic.Control.CaseElse
+			v.Local.sInternalAssign.Set("")
+	f.Intrinsic.Control.EndSelect
+	
+	'
+	F.Global.CRM.SaveOpportunity(-1,"", v.Global.sCurrentCustomerID, "15", v.Local.sContactID, v.Local.sDealType, v.Global.sCurrentDealName, "", "NULL", v.Local.sDueDate, v.Local.sDueDate, v.Local.sLeadSourceID, v.Local.sAmount, v.Local.sFunnelID, v.Local.sProbID, v.Local.sStatusID, v.Local.sInternalAssign, v.Local.3.Trim, "","","","","", v.Local.iRetID)
+	
+	'update closed date to NULL
+	f.Intrinsic.String.Build("select OID from CRM_OPP_MASTER where ODESC='{0}'", v.Global.sCurrentDealName, v.Local.sSQL)
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sOID)
+	f.Intrinsic.Control.If(v.Local.sOID,!=,"")
+		f.Intrinsic.String.Build("update CRM_OPP_MASTER set OCLOSEDATE=NULL, OCREATEDATE='{1}', OEXPDATE='{2}' where OID='{0}'", v.Local.sOID, v.Local.sCreateDate, v.Local.sExpDate, v.Local.sSQL)
+		f.Intrinsic.String.Replace(v.Local.sSQL,"'NULL'", "NULL", v.Local.sSQL)
+		f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+		'Add Notes
+		f.Intrinsic.Control.If(v.Local.sDealDesc,!=,"")
+			f.Intrinsic.String.Build("insert into CRM_NOTES_COMBINED (NTYPE, OID, NOTES, LAST_CHG_PGM, LAST_CHG_BY, NOTE_DATETIME, LAST_CHG_DATETIME) values({0},{1},'{2}','{3}','{4}', NOW(), NOW())", "2", v.Local.sOID, v.Local.sDealDesc.PSQLFriendly, "HS INTEGRATION", "SUPERVSR", v.Local.sSQL)
+			f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+		f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.EndIf
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.CreateOpportunity.End
+
+Program.Sub.UpdateOpportunity.Start
+f.Intrinsic.Control.Try
+	v.Local.sDealID.Declare(String)
+	v.Local.sDealName.Declare(String)
+	v.Local.sCustID.Declare(String)
+	v.Local.sContactID.Declare(String)
+	v.Local.DealOwner.Declare(String)
+	v.Local.sDealType.Declare(String)
+	v.Local.sAmount.Declare(String)
+	v.Local.sProbability.Declare(String)
+	v.Local.sBusinessUnitFunnel.Declare(String)
+	v.Local.CreateDate.Declare(String)
+	v.Local.DueDate.Declare(String)
+	v.Local.iIndex.Declare(Long)
+	v.Local.sSQL.Declare(String)
+	v.Local.sRet.Declare(String)
+	v.Local.sOppDesc.Declare(String)
+	v.Local.sLeadSourceID.Declare(String)
+	v.Local.sStatusID.Declare(String)
+	v.Local.iRetID.Declare(Long)
+	v.Local.sOID.Declare(String)
+	v.Local.sLeadSource.Declare(String)
+	v.Local.sExpDate.Declare(String)
+	v.Local.sSalesPersonCode.Declare(String)
+	v.Local.sFunnelID.Declare(String)
+	v.Local.sProbID.Declare(String)
+	v.Local.sDealStage.Declare(String)
+	v.Local.bHasDealID.Declare(Boolean)
+	v.Local.sDealDesc.Declare(String)
+	v.Local.sNotesID.Declare(String)
+	v.Local.sInternalAssign.Declare(String)
+	
+	v.Local.sOID.Set(v.Args.argOID)
+	v.Local.iIndex.Set(v.Args.argIndex)
+	
+	v.Local.sDealID.Set(v.DataTable.dtDeals(v.Local.iIndex).DEALID!FieldvalTrim)
+'	v.Local.sDealName.Set(v.DataTable.dtDeals(v.Local.iIndex).DEAL_NAME!FieldvalTrim)
+	v.Local.DealOwner.Set(v.DataTable.dtDeals(v.Local.iIndex).DEAL_OWNER!FieldvalTrim)
+	v.Local.sDealType.Set(v.DataTable.dtDeals(v.Local.iIndex).DEAL_TYPE!FieldvalTrim)
+	v.Local.sAmount.Set(v.DataTable.dtDeals(v.Local.iIndex).FORECAST_AMOUNT!FieldvalTrim)
+	v.Local.sProbability.Set(v.DataTable.dtDeals(v.Local.iIndex).PROBABILITY!FieldvalTrim)
+	v.Local.sBusinessUnitFunnel.Set(v.DataTable.dtDeals(v.Local.iIndex).BUSSINESS_UNITS!FieldvalTrim)
+	v.Local.CreateDate.Set(v.DataTable.dtDeals(v.Local.iIndex).CREATE_DATE!FieldvalTrim)
+	v.Local.sLeadSource.Set(v.DataTable.dtDeals(v.Local.iIndex).ORG_SOURCE!FieldValTrim)
+	v.Local.sDealStage.Set(v.DataTable.dtDeals(v.Local.iIndex).DEAL_STAGE!FieldValTrim)
+	v.Local.sDealDesc.Set(v.DataTable.dtDeals(v.Local.iIndex).DEAL_DESCRIPTION!FieldvalTrim)
+	
+	f.Intrinsic.String.Format(v.DataTable.dtDeals(v.Local.iIndex).CLOSE_DATE!FieldvalTrim,"YYYY-MM-DD", v.Local.sExpDate)
+	f.Intrinsic.Control.If(v.Local.sExpDate,=,"")
+		v.Local.sExpDate.Set("NULL")
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.String.IsInString(v.Global.sCurrentDealName, v.Local.sDealID, True, v.Local.bHasDealID)
+	f.Intrinsic.Control.If(v.Local.bHasDealID,=,False)
+		f.Intrinsic.String.Build("[{0}] {1}", v.Local.sDealID, 	v.Global.sCurrentDealName, 	v.Global.sCurrentDealName)
+	f.Intrinsic.Control.EndIf
+	
+	'find contact ID
+	f.Intrinsic.String.Build("select ALT_ID from V_CONTACT where EMAIL1 = '{0}'", v.Global.sCurrentContactEmail, v.Local.sSQL)
+	v.Local.sRet.Set("")
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	v.Local.sContactID.Set(v.Local.sRet)
+	
+	'Lead Source
+		f.Intrinsic.Control.SelectCase(v.Local.sLeadSource)
+		f.Intrinsic.Control.Case("ORGANIC_SEARCH")
+			v.Local.sLeadSource.Set("Organic Search")
+		f.Intrinsic.Control.Case("PAID_SEARCH")
+			v.Local.sLeadSource.Set("Paid Search")
+		f.Intrinsic.Control.Case("EMAIL_MARKETING")
+			v.Local.sLeadSource.Set("Email Marketing")
+		f.Intrinsic.Control.Case("SOCIAL_MEDIA")
+			v.Local.sLeadSource.Set("Organic Social")
+		f.Intrinsic.Control.Case("REFERRALS")
+			v.Local.sLeadSource.Set("Referrals")
+		f.Intrinsic.Control.Case("OTHER_CAMPAIGNS")
+			v.Local.sLeadSource.Set("Other Campaigns")
+		f.Intrinsic.Control.Case("DIRECT_TRAFFIC")
+			v.Local.sLeadSource.Set("Direct Traffic")
+		f.Intrinsic.Control.Case("OFFLINE")
+			v.Local.sLeadSource.Set("Offline Sources")
+		f.Intrinsic.Control.Case("PAID_SOCIAL")
+			v.Local.sLeadSource.Set("Paid Social")
+		f.Intrinsic.Control.CaseElse
+			v.Local.sLeadSource.Set("Other Campaigns")
+	f.Intrinsic.Control.EndSelect
+	f.Intrinsic.String.Build("select SEQ from CRM_OPP_LEADSOURCE where RTRIM(VALUE)='{0}'", v.Local.sLeadSource, v.Local.sSQL)
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sLeadSource)
+
+	'Business Funnel
+	'find Funnel ID
+	f.Intrinsic.String.Build("select SEQ from CRM_OPP_FUNNEL where RTRIM(VALUE)='{0}'", v.Local.sBusinessUnitFunnel, v.Local.sSQL)
+	v.Local.sRet.Set("")
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	v.Local.sFunnelID.Set(v.Local.sRet)
+	
+	'Prob
+	'find Prob
+	f.Intrinsic.Control.If(v.Local.sFunnelID,!=,"")
+		f.Intrinsic.String.Build("select ID from CRM_OPP_PROB where FUNNELID='{0}' and RTRIM(VALUE)='{1}'", v.Local.sFunnelID, v.Local.sProbability, v.Local.sSQL)
+		'match Playground's value
+		f.Intrinsic.String.Replace(v.Local.sProbability,"%","", v.Local.sProbability)
+		f.Intrinsic.String.Build("select ID from CRM_OPP_PROB where FUNNELID='{0}' and PROBABILITY='{1}'", v.Local.sFunnelID, v.Local.sProbability, v.Local.sSQL)
+		v.Local.sRet.Set("")
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+		v.Local.sProbID.Set(v.Local.sRet)
+		f.Intrinsic.Control.If(v.Local.sProbID,=,"")
+			v.Local.sProbID.Set("0")
+		f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.Else
+		v.Local.sFunnelID.Set("0")
+		v.Local.sProbID.Set("0")
+	f.Intrinsic.Control.EndIf
+	
+	'Status-Stage - Match by Mappings - HS ID => Get ID
+	v.Local.sStatusID.Set("")
+	f.Intrinsic.String.Build("select RTRIM(STATUSID) from GCG_6441_STAGE_STTS where RTRIM(STAGEID)='{0}'", v.Local.sDealStage.Trim, v.Local.sSQL)
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sStatusID)
+	f.Intrinsic.Control.If(v.Local.sStatusID,=,"")
+		'if not found if REF, set Default
+		v.Local.sStatusID.Set("32769")
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.Control.If(v.Local.sLeadSource,=,"")
+		v.Local.sLeadSource.Set("0")
+	f.Intrinsic.Control.EndIf
+	
+	'find SalesPerson
+	f.Intrinsic.String.Build("select SALESPERSONCODE from GCG_6441_DEALOWNER where RTRIM(OWNERID)='{0}'", v.Local.DealOwner, v.Local.sSQL)
+	v.Local.sRet.Set("")
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	v.Local.sSalesPersonCode.Set(v.Local.sRet)
+	
+		'Internal Assign
+	f.Intrinsic.Control.SelectCase(v.Local.sBusinessUnitFunnel.Trim)
+		f.Intrinsic.Control.CaseAny("Chip Conveyor", "Coolant Filtration", "Coolant Tank")
+			v.Local.sInternalAssign.Set("DONKAHLE")
+		f.Intrinsic.Control.CaseAny("Telescopic Steel Covers (TSC)", "Bellow Covers", "Telescopic Springs", "Wiper Systems (TSC)", "Wiper Systems (Other)", "Lift-Table Bellows", "Service & Repair")
+			v.Local.sInternalAssign.Set("ENOCH")
+		f.Intrinsic.Control.CaseAny("Apron/Roll-up Covers", "Walk-on/Pit Covers", "XY Shield (Face Shield)", "Cable Carriers", "Machine Roof Bellow Covers")
+			v.Local.sInternalAssign.Set("BROCK")
+		f.Intrinsic.Control.CaseAny("Machine Enclosures", "Platforms/Stairs/Guarding/Fencing")
+			v.Local.sInternalAssign.Set("KEN")
+		f.Intrinsic.Control.CaseElse
+			v.Local.sInternalAssign.Set("")
+	f.Intrinsic.Control.EndSelect
+	
+	'update
+	f.Intrinsic.String.Build("update CRM_OPP_MASTER set ODESC='{0}', OREVENUE={1}, OFUNNEL={2}, OPROB={3}, OLEADSOURCE={4}, OEXPDATE='{6}', OSTATUS={8}, SALESPERSON='{7}', INT_ASSIGN='{9}' where OID={5}", v.Global.sCurrentDealName, v.Local.sAmount, v.Local.sFunnelID, v.Local.sProbID, v.Local.sLeadSource, v.Local.sOID, v.Local.sExpDate, v.Local.sSalesPersonCode.Trim, v.Local.sStatusID, v.Local.sInternalAssign, v.Local.sSQL)
+	f.Intrinsic.String.Replace(v.Local.sSQL, "'NULL'", "NULL", v.Local.sSQL)
+	f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+	
+	'Notes
+	f.Intrinsic.String.Build("select NID from CRM_NOTES_COMBINED N where N.LAST_CHG_DATETIME = (select MAX(LAST_CHG_DATETIME) from CRM_NOTES_COMBINED REF where N.OID = REF.OID) and OID={0}", v.Local.sOID, v.Local.sSQL)
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sNotesID)
+	f.Intrinsic.Control.If(v.Local.sNotesID,=,"")
+		f.Intrinsic.String.Build("insert into CRM_NOTES_COMBINED (NTYPE, OID, NOTES, LAST_CHG_PGM, LAST_CHG_BY, NOTE_DATETIME, LAST_CHG_DATETIME) values({0},{1},'{2}','{3}','{4}', NOW(), NOW())", "2", v.Local.sOID, v.Local.sDealDesc.PSQLFriendly, "HS INTEGRATION", "SUPERVSR", v.Local.sSQL)
+	f.Intrinsic.Control.Else
+		f.Intrinsic.String.Build("update CRM_NOTES_COMBINED set NOTES='{1}' where NID={0}", v.Local.sNotesID, v.Local.sDealDesc, v.Local.sSQL)
+	f.Intrinsic.Control.EndIf
+	f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.UpdateOpportunity.End
+
+Program.Sub.CreateCustomer.Start
+f.Intrinsic.Control.Try
+	v.Local.sCustomerNumber.Declare(String)
+	v.Local.sCustomerName.Declare(String)
+	v.Local.sAddress1.Declare(String)
+	v.Local.sAddress2.Declare(String)
+	v.Local.sState.Declare(String)
+	v.Local.sZip.Declare(String)
+	v.Local.sSQL.Declare(String)
+	v.Local.sNextCustomerID.Declare(String)
+	v.Local.lNextCustomerIDUpdate.Declare(Long)
+	v.Local.sNextCustomerIDUpdate.Declare(String)
+	v.Local.sHSCustomerID.Declare(String)
+	v.Local.sCompanyOwner.Declare(String)
+	v.Local.sSalespersonCode.Declare(String)
+	v.Local.sCity.Declare(String)
+	v.Local.sRet.Declare(String)
+	v.Local.sDomainName.Declare(String)
+	
+	v.Local.sCustomerNumber.Set(v.Global.sNextCustomerID)
+	v.Local.sHSCustomerID.Set(v.Args.argHSCustomerID)
+	
+	v.Local.sCustomerName.Set(v.DataTable.dtCustomer(0).CUSTOMER_NAME.FieldValTrim)
+	v.Local.sAddress1.Set(v.DataTable.dtCustomer(0).ADDRESS1.FieldValTrim)
+	v.Local.sAddress2.Set(v.DataTable.dtCustomer(0).ADDRESS2.FieldValTrim)
+	v.Local.sState.Set(v.DataTable.dtCustomer(0).STATE_REGION.FieldValTrim)
+	v.Local.sZip.Set(v.DataTable.dtCustomer(0).ZIP_CODE.FieldValTrim)
+	v.Local.sCity.Set(v.DataTable.dtCustomer(0).CITY.FieldValTrim)
+	v.Local.sCompanyOwner.Set(v.DataTable.dtCustomer(0).COMPANY_OWNER!FieldValTrim)
+	v.Local.sDomainName.Set(v.DataTable.dtCustomer(0).DOMAIN_NAME!FieldValTrim)
+	
+	'find Next CustID
+	v.Local.sSQL.Set("select TERMS_MESSAGE from AR_TERMS where ass_sys = 'ARM'")
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sNextCustomerID)
+	f.Intrinsic.String.Replace(v.Local.sNextCustomerID, "Y", "", v.Local.sNextCustomerID)
+	
+	v.Local.lNextCustomerIDUpdate.Set(v.Local.sNextCustomerID.Long)
+	f.Intrinsic.Math.Add(v.Local.lNextCustomerIDUpdate, 1, v.Local.lNextCustomerIDUpdate)
+	f.Intrinsic.String.Concat("Y",v.Local.lNextCustomerIDUpdate.String, v.Local.sNextCustomerIDUpdate)
+	
+	f.Intrinsic.String.Build("update AR_TERMS set TERMS_MESSAGE='{0}' where ass_sys = 'ARM'", v.Local.sNextCustomerIDUpdate, v.Local.sSQL)
+	f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+	
+	'find Salesperson
+	f.Intrinsic.String.Build("select RTRIM(SALESPERSONCODE) from GCG_6441_DEALOWNER where OWNERID='{0}'", v.Local.sCompanyOwner, v.Local.sSQL)
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sSalespersonCode)
+	
+	v.Global.s6013Mode.Set("50")
+'	f.Data.DataTable.AddRow("6013", "CustNum", "179320", "CustName", "GCG TEST CO")
+	f.Data.DataTable.AddRow("6013", "CustNum", v.Local.sNextCustomerID, "CustName", v.Local.sCustomerName, "Address1", v.Local.sAddress1, "Address2", v.Local.sAddress2, "State", v.Local.sState, "Zip", v.Local.sZip, "City", v.Local.sCity, "SalesRep", v.Local.sSalespersonCode)
+
+	f.Intrinsic.Control.CallSub(6013Sync)
+	
+	'get value for newly-created CustomerID
+	v.Global.sCurrentCustomerID.Set(v.Local.sNextCustomerID)
+	
+	'update Xref
+	f.Intrinsic.String.Build("insert into GCG_6441_HS_CUSTOMER_REF values('{0}', '{1}')", v.Local.sNextCustomerID, v.Local.sHSCustomerID, v.Local.sSQL)
+	f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+	
+	'domain name
+	f.Intrinsic.String.Build("select * from CUST_WEB_ADDR where CUST_ID='{0}'", v.Local.sNextCustomerID, v.Local.sSQL)
+	v.Local.sRet.Set("")
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	f.Intrinsic.Control.If(v.Local.sRet,=,"")
+		f.Intrinsic.String.Build("insert into CUST_WEB_ADDR (CUST_ID, CUST_ADDR) values('{0}','{1}')", v.Local.sNextCustomerID, v.Local.sDomainName.Trim, v.Local.sSQL)
+	f.Intrinsic.Control.Else
+		f.Intrinsic.String.Build("update CUST_WEB_ADDR set CUST_ADDR='{1}' where RTRIM(CUST_ID)='{0}'", v.Local.sNextCustomerID, v.Local.sDomainName.Trim, v.Local.sSQL)
+	f.Intrinsic.Control.EndIf
+	f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.CreateCustomer.End
+
+Program.Sub.SaveContactToDb.Start
+'				f.Intrinsic.String.Build("Select VID CONTACT_ID, [First Name] FIRST_NAME, [Last Name] LAST_NAME, Email EMAIL, [Job Title] JOB_TITLE, [Phone Number] PHONE_NUMBER from Contacts where VID={0}", v.Local.sHSContactID, v.Local.sSQL)
+
+f.Intrinsic.Control.Try
+	
+	v.Local.sHSCustomerID.Declare(String)
+	v.Local.sContactName.Declare(String)
+	v.Local.sContactType.Declare(String)
+	v.Local.sFirstName.Declare(String)
+	v.Local.sLastName.Declare(String)
+	v.Local.sSQL.Declare(String)
+	
+	v.Local.sFirstName.Set(v.DataTable.dtContact(0).FIRST_NAME.FieldValTrim)
+	v.Local.sLastName.Set(v.DataTable.dtContact(0).LAST_NAME.FieldValTrim)
+	f.Intrinsic.String.Build("{0} {1}", v.Local.sFirstName, v.Local.sLastName, v.Local.sContactName)
+
+	f.Intrinsic.String.Build("Insert into GCG_5625_Contact_Str (AutoID,CustProsp,ContactType,ContactName,FirstName,LastName,Email, PrimaryPhoneNumber, SecondaryPhoneNumber) values('1','{0}','{1}','{2}','{3}','{4}','{5}','{6}','{7}')", v.Global.sCurrentCustomerID, "C", v.Local.sContactName, v.Local.sFirstName, v.Local.sLastName, v.DataTable.dtContact(0).EMAIL.FieldValTrim, v.DataTable.dtContact(0).PHONE_NUMBER.FieldValTrim, v.DataTable.dtContact(0).MOBILE_PHONE.FieldValTrim, v.Local.sSQL)
+	
+	f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+	
+	f.Intrinsic.Control.CallSub(Create_NewContactUpl)
+	f.Intrinsic.Control.CallSub(Create_New_Contact)
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+
+Program.Sub.SaveContactToDb.End
+
+Program.Sub.Create_New_Contact.Start
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	v.Local.sContacts.Declare
+	v.Local.sTemp.Declare
+	v.Local.iLengthArrayADD.Declare
+	v.Local.sRet.Declare
+	v.Local.sFile.Declare
+	v.Local.bEx.Declare
+	v.Local.sParams.Declare
+	v.Local.iCnt.Declare
+	v.Local.sCustomer.Declare
+	v.Local.sSQL.Declare
+	v.Local.sOutputContact.Declare
+	v.Local.sCol.Declare
+	v.Local.sHold.Declare
+	v.Local.sLine.Declare
+	v.Local.sLen.Declare
+
+	
+	f.Data.DataView.ToString("NewContactUpl","dvNewContactUpl","CustProsp*!*ContactType*!*ContactName*!*Sequence*!*NamePrefix*!*FirstName*!*MiddleInitial*!*LastName*!*Suffix*!*PreferredName*!*Birthday*!*AffiliationFlag*!*PrimaryPhoneType*!*PrimaryPhoneNumber*!*PrimaryPhoneExtension*!*SecondaryPhoneType*!*SecondaryPhoneNumber*!*SecondaryphoneExtension*!*Email*!*PrimaryAddressFlag*!*PrimaryAddress1*!*PrimaryAddress2*!*PrimaryCity*!*PrimaryState*!*PrimaryZip*!*SecondaryAddressDesc*!*SecondaryAddress1*!*SecondaryAddress2*!*SecondaryCity*!*SecondaryState*!*SecondaryZip*!*AdditionalPhone1Type*!*AdditionalPhone1Number*!*AdditionalPhone1Ext*!*AdditionalPhone2Type*!*AdditionalPhone2Number*!*AdditionalPhone2Ext*!*SecondaryEmail*!*SpouseName*!*JobTitle*!*JobFunction*!*JobManagerName*!*JobAssistantManagerName*!*ShipTo*!*PrimaryShipToFlag*!*PrimaryAddress3*!*PrimaryAddress4*!*PrimaryAddress5*!*PrimaryAddressCountry*!*ShipToAddress3*!*ShipToAddress4*!*ShipToAddress5*!*ShipToAddressCountry*!*Intercept*!*User1*!*User2*!*User3*!*User4*!*User5*!*User6*!*User7*!*User8*!*User9*!*User10*!*User11*!*User12*!*User13*!*User14*!*User15*!*User16*!*PrimaryContact","*!*","%#%",v.Local.sContacts)
+	
+	f.Intrinsic.String.Replace(v.Local.sContacts,v.Ambient.NewLine,"",v.Local.sContacts)
+	
+	F.Intrinsic.String.Split(V.Local.sContacts,"*!*",V.Local.sTemp)
+
+'	F.Intrinsic.String.Split("CustProsp*!*ContactType*!*ContactName*!*Sequence*!*NamePrefix*!*FirstName*!*MiddleInitial*!*LastName*!*Suffix*!*PreferredName*!*Birthday*!*AffiliationFlag*!*PrimaryPhoneType*!*PrimaryPhoneNumber*!*PrimaryPhoneExtension*!*SecondaryPhoneType*!*SecondaryPhoneNumber*!*SecondaryphoneExtension*!*Email*!*PrimaryAddressFlag*!*PrimaryAddress1*!*PrimaryAddress2*!*PrimaryCity*!*PrimaryState*!*PrimaryZip*!*SecondaryAddressDesc*!*SecondaryAddress1*!*SecondaryAddress2*!*SecondaryCity*!*SecondaryState*!*SecondaryZip*!*AdditionalPhone1Type*!*AdditionalPhone1Number*!*AdditionalPhone1Ext*!*AdditionalPhone2Type*!*AdditionalPhone2Number*!*AdditionalPhone2Ext*!*SecondaryEmail*!*SpouseName*!*JobTitle*!*JobFunction*!*JobManagerName*!*JobAssistantManagerName*!*ShipTo*!*PrimaryShipToFlag*!*PrimaryAddress3*!*PrimaryAddress4*!*PrimaryAddress5*!*PrimaryAddressCountry*!*ShipToAddress3*!*ShipToAddress4*!*ShipToAddress5*!*ShipToAddressCountry*!*Intercept*!*User1*!*User2*!*User3*!*User4*!*User5*!*User6*!*User7*!*User8*!*User9*!*User10*!*User11*!*User12*!*User13*!*User14*!*User15*!*User16*!*PrimaryContact","*!*",V.Local.sCol)
+	
+		
+	'Format string
+	F.Intrinsic.String.Split("6*!*1*!*30*!*2*!*1*!*25*!*1*!*25*!*1*!*30*!*10*!*1*!*1*!*20*!*5*!*1*!*20*!*5*!*100*!*1*!*50*!*50*!*15*!*10*!*15*!*30*!*50*!*50*!*15*!*10*!*15*!*1*!*20*!*5*!*1*!*20*!*5*!*100*!*50*!*50*!*50*!*50*!*50*!*6*!*1*!*50*!*50*!*50*!*12*!*50*!*50*!*50*!*12*!*1*!*30*!*30*!*30*!*30*!*30*!*30*!*30*!*30*!*30*!*30*!*30*!*30*!*30*!*30*!*30*!*30*!*1","*!*",V.Local.iLengthArrayADD)
+	
+'	f.Intrinsic.String.RPad(v.Local.sTemp(0)," ",6,v.Local.sLine)
+'	f.Intrinsic.Control.For(v.Local.iCnt,1,v.Local.sCol.UBound,1)
+'		f.Intrinsic.String.RPad(v.Local.sTemp(v.Local.iCnt)," ",v.Local.sLen(v.Local.iCnt),v.Local.sHold)
+'		f.Intrinsic.String.Build("{0}{1}",v.Local.sLine,v.Local.sHold,v.Local.sLine)	
+'	f.Intrinsic.Control.Next(v.Local.iCnt)
+'	v.Local.sOutputContact.Set(v.Local.sLine)
+	
+	F.Intrinsic.String.PositionalString(V.Local.sTemp,V.Local.iLengthArrayADD,V.Local.sOutputContact)
+	
+	f.Intrinsic.String.Split(v.Local.sOutputContact,v.Ambient.NewLine,v.Local.sOutputContact)
+	f.Intrinsic.String.Join(v.Local.sOutputContact,"",v.Local.sOutputContact)
+	
+	'Create contact.txt file
+	F.Intrinsic.String.Build("{0}\CONTACT.TXT",V.Caller.FilesDir,V.Local.sFile)
+	F.Intrinsic.File.Exists(V.Local.sFile,V.Local.bEx)
+	Function.Intrinsic.Control.If(V.Local.bEx)
+		F.Intrinsic.File.DeleteFile(V.Local.sFile)
+	Function.Intrinsic.Control.EndIf
+	F.Intrinsic.File.String2File(V.Local.sFile,V.Local.sOutputContact)
+	
+	'Call callwrapper to create new contact
+	F.Intrinsic.String.Build("{0}!*!UPLCNTCT/U",V.Caller.CompanyCode,V.Local.sParams)
+	
+	Function.Global.General.CallWrapperSync(51, V.Local.sParams)
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: 5625 {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}GAB Version: {5}}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	f.Intrinsic.UI.Msgbox(v.Local.sError)
+F.Intrinsic.Control.EndTry
+Program.Sub.Create_New_Contact.End
+
+Program.Sub.Create_NewContactUpl.Start
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	
+	'Create table structure
+	f.Intrinsic.Control.If(v.DataTable.NewContactUpl.Exists)
+		f.Data.DataTable.Close("NewContactUpl")
+	f.Intrinsic.Control.EndIf
+	
+	f.ODBC.Connection!Conx.OpenCompanyConnection
+	
+	f.Data.DataTable.CreateFromSQL("NewContactUpl","con","Select AutoID,CustProsp,ContactType,ContactName,Sequence,NamePrefix,FirstName,MiddleInitial,LastName,Suffix,PreferredName,Birthday,AffiliationFlag,PrimaryPhoneType,PrimaryPhoneNumber,PrimaryPhoneExtension,SecondaryPhoneType,SecondaryPhoneNumber,SecondaryphoneExtension,Email,PrimaryAddressFlag,PrimaryAddress1,PrimaryAddress2,PrimaryCity,PrimaryState,PrimaryZip,SecondaryAddressDesc,SecondaryAddress1,SecondaryAddress2,SecondaryCity,SecondaryState,SecondaryZip,AdditionalPhone1Type,AdditionalPhone1Number,AdditionalPhone1Ext,AdditionalPhone2Type,AdditionalPhone2Number,AdditionalPhone2Ext,SecondaryEmail,SpouseName,JobTitle,JobFunction,JobManagerName,JobAssistantManagerName,ShipTo,PrimaryShipToFlag,PrimaryAddress3,PrimaryAddress4,PrimaryAddress5,PrimaryAddressCountry,ShipToAddress3,ShipToAddress4,ShipToAddress5,ShipToAddressCountry,Intercept,User1,User2,User3,User4,User5,User6,User7,User8,User9,User10,User11,User12,User13,User14,User15,User16,PrimaryContact from GCG_5625_Contact_Str",True)
+'	f.Data.DataTable.DeleteRow("NewContactUpl",-1)
+'	f.Data.DataTable.AcceptChanges("NewContactUpl")
+	f.ODBC.Connection!Conx.Execute("delete GCG_5625_Contact_Str")
+	f.Data.DataView.Create("NewContactUpl","dvNewContactUpl")	
+	
+	f.ODBC.Connection!Conx.Close
+	
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: 5625 {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}GAB Version: {5}}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	f.Intrinsic.UI.Msgbox(v.Local.sError)
+	
+F.Intrinsic.Control.EndTry
+Program.Sub.Create_NewContactUpl.End
+
+Program.Sub.PostQuoteToHS.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	v.Local.iCounter.Declare(Long)
+	v.Local.sRet.Declare(String)
+	v.Local.sLog.Declare(String)
+	
+	f.Intrinsic.Control.If(v.DataTable.dtQuoteRef.Exists)
+		f.Data.DataTable.Close("dtQuoteRef")
+	f.Intrinsic.Control.EndIf
+	v.Local.sSQL.Set("select RTRIM(QUOTE_NO) Quote_No from GCG_6441_HS_QQUOTE group by Quote_No order by Quote_No DESC")
+	f.Data.DataTable.CreateFromSQL("dtQuoteRef", "Con", v.Local.sSQL, True)
+	
+	f.Intrinsic.Control.if(v.DataTable.dtQuoteRef.RowCount,=,0)
+		'log: no new Quote
+		f.Intrinsic.Control.CallSub(AddLog, "LogMsg", "Found no new Quotes from GSS.")
+		f.Intrinsic.Control.ExitSub
+	
+	f.Intrinsic.Control.Else
+		'loop thru quotes and post
+		f.Intrinsic.String.Build("Found {0} New and Edited Quotes from GSS.", v.DataTable.dtQuoteRef.RowCount, v.Local.sLog)
+		f.Intrinsic.Control.CallSub(AddLog, "LogMsg", v.Local.sLog)
+		
+		f.Intrinsic.Control.For(v.Local.iCounter, 0 ,v.DataTable.dtQuoteRef.RowCount--, 1)
+			f.Intrinsic.Control.Try
+				f.Intrinsic.String.Build("Working on Quote#{0}", v.DataTable.dtQuoteRef(v.Local.iCounter).Quote_No!FieldValTrim, v.Local.sLog)
+				f.Intrinsic.Control.CallSub(AddLog, "LogMsg", v.Local.sLog)
+				
+				f.Intrinsic.Control.CallSub(PostAQuoteToHS, "argQuote_No", v.DataTable.dtQuoteRef(v.Local.iCounter).Quote_No!FieldValTrim)
+			f.Intrinsic.Control.Catch
+				f.Intrinsic.Control.CallSub(Catching)
+				f.Intrinsic.String.Build("Error with Transaction #{0}", v.DataTable.dtQuoteRef(v.Local.iCounter).Quote_No!FieldValTrim, v.Global.sError)
+				F.Intrinsic.Control.CallSub(ErrorLog, "argMsg", v.Global.sError)
+				f.Intrinsic.Control.Next(v.Local.iCounter)
+			f.Intrinsic.Control.EndTry
+		f.Intrinsic.Control.Next(v.Local.iCounter)
+	f.Intrinsic.Control.EndIf
+	
+'	f.ODBC.Connection!Con.Close
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.PostQuoteToHS.End
+
+Program.Sub.PostAQuoteToHS.Start
+f.Intrinsic.Control.Try
+	v.Local.sQuoteNo.Declare(String)
+	v.Local.sCustomerNo.Declare(String)
+	v.Local.sHSCustomerNo.Declare(String)
+	v.Local.sHSDealID.Declare(String)
+	v.Local.sHSContactID.Declare(String)
+	v.Local.sSQL.Declare(String)
+	v.Local.sRet.Declare(String)
+	v.Local.sContact_FName.Declare(String)
+	v.Local.sContact_LName.Declare(String)
+	v.Local.sDealName.Declare(String)
+	v.Local.sDealDesc.Declare(String)
+	v.Local.fQuoteAvg.Declare(Float)
+	v.Local.sLog.Declare(String)
+	v.Local.sDealOwner.Declare(String)
+	v.Local.sExpectedRevenue.Declare(String)
+	v.Local.sLeadSource.Declare(String)
+	v.Local.sProbability.Declare(String)
+	v.Local.sFunnel.Declare(String)
+	v.Local.sStatus.Declare(String)
+	v.Local.sSalesperson.Declare(String)
+	v.Local.sOID.Declare(String)
+	v.Local.sContactEmail.Declare(String)
+	v.Local.sAltContactID.Declare(String)
+	
+	v.Local.sOID.Set(v.Args.argQuote_No)
+	v.Local.dExpDate.Declare(Date)
+	v.Local.sExpDate.Declare(String)
+	v.Local.sDealStageID.Declare(String)
+	v.Local.sNotes.Declare(String)
+	v.Local.sCompName.Declare(String)
+	v.Local.sAddress1.Declare(String)
+	v.Local.sAddress2.Declare(String)
+	v.Local.sHSOwnerID.Declare(String)
+	v.Local.sWebAddress.Declare(String)
+	
+	'get Notes
+	f.Intrinsic.String.Build("select RTRIM(NOTES) NOTES from CRM_NOTES_COMBINED N where N.LAST_CHG_DATETIME = (select MAX(LAST_CHG_DATETIME) from CRM_NOTES_COMBINED REF where N.OID = REF.OID) and OID={0}", v.Local.sOID, v.Local.sSQL)
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sNotes)
+	
+	'check XREF
+	f.Intrinsic.String.Build("Select HS_DEALID from GCG_6441_HS_QT_HDR_XREF where QUOTE_NO='{0}'", v.Local.sOID, v.Local.sSQL)
+	
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF)
+		'1A/ Deal not found. Create new Deal
+		'check if deal still exists in GSS
+		f.Intrinsic.String.Build("select COMPID from CRM_OPP_MASTER where OID='{0}'", v.Local.sOID, v.Local.sSQL)
+		
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+		'Cannot find = OPP has been delete
+		f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF)
+			'Delete quote from queue
+			f.Intrinsic.String.Build("delete from GCG_6441_HS_QQUOTE where Quote_No='{0}'", v.Local.sOID, v.Local.sSQL)
+			f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+			'exit
+			f.Intrinsic.Control.ExitSub
+		f.Intrinsic.Control.EndIf
+		
+		'2/ check if customer and contact exist in HS from XREF table
+		'********************************
+		v.Local.sCustomerNo.Set(v.Local.sRet)
+		f.Intrinsic.String.Build("select top 1 HS_COMP_ID from GCG_6441_HS_CUSTOMER_REF where COMP_ID='{0}'", v.Local.sCustomerNo.Trim, v.Local.sSQL)
+		
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+		
+		f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF)
+			'2A/ Company not exist. create new and return HS Company ID
+			f.Intrinsic.String.Build("select NAME_CUSTOMER, SALESPERSON, ADDRESS1, ADDRESS2, CITY, STATE, ZIP,  TELEPHONE from V_CUSTOMER_MASTER where CUSTOMER='{0}'", v.Local.sCustomerNo, v.Local.sSQL)
+
+			f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+			
+			f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF)
+				'log, customer not found
+				f.Intrinsic.String.Build("Cannot find info for customer#{0}.", v.Local.sCustomerNo.Trim, v.Local.sLog)
+				f.Intrinsic.Control.CallSub(AddLog, "LogMsg", v.Local.sLog)
+				f.Intrinsic.String.Build("delete from GCG_6441_HS_QQUOTE where Quote_No='{0}'", v.Local.sOID, v.Local.sSQL)
+				f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+				f.Intrinsic.Control.ExitSub
+			f.Intrinsic.Control.Else
+				f.Intrinsic.String.Split(v.Local.sRet, "*!*", v.Local.sRet)
+				v.Local.sCompName.Set(v.Local.sRet(0))
+				v.Local.sAddress1.Set(v.Local.sRet(2))
+				v.Local.sAddress2.Set(v.Local.sRet(3))
+				
+				'Web Address
+				f.Intrinsic.String.Build("select RTRIM(CUST_ADDR) from CUST_WEB_ADDR where RTRIM(CUST_ID)='{0}'", v.Local.sCustomerNo, v.Local.sSQL)
+				f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sWebAddress)
+				f.Intrinsic.Control.If(v.Local.sWebAddress,=,"")
+					v.Local.sWebAddress.Set("NULL")
+				f.Intrinsic.Control.EndIf
+		
+				'get owner/salesperson from xref
+				f.Intrinsic.Control.If(v.Local.sRet(1),!=,"")
+					f.Intrinsic.String.Build("select RTRIM(OWNERID) from GCG_6441_DEALOWNER where RTRIM(SALESPERSONCODE)='{0}'", v.Local.sRet(1).Trim, v.Local.sSQL)
+					f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sHSOwnerID)
+			
+					'Owner exists in xref
+					f.Intrinsic.Control.If(v.Local.sHSOwnerID,!=,"")
+						f.Intrinsic.String.Build("insert into COMPANIES ([Company Name], TYPE,  [Street Address], [Street Address 2], City, [State/Region], [Postal Code], [Phone Number], [company owner], [Company Domain Name]) values ('{0}', '{1}', '{2}', '{3}', '{4}', '{5}', '{6}', '{7}', {8}, '{9}')", v.Local.sCompName.PSQLFriendly, "PROSPECT", v.Local.sAddress1.PSQLFriendly, v.Local.sAddress2.PSQLFriendly, v.Local.sRet(4), v.Local.sRet(5), v.Local.sRet(6), v.Local.sRet(7), v.Local.sHSOwnerID, v.Local.sWebAddress, v.Local.sSQL)
+			
+					'xref not found
+					f.Intrinsic.Control.Else
+						f.Intrinsic.String.Build("insert into COMPANIES ([Company Name], TYPE,  [Street Address], [Street Address 2], City, [State/Region], [Postal Code], [Phone Number], [Company Domain Name]) values ('{0}', '{1}', '{2}', '{3}', '{4}', '{5}', '{6}', '{7}', '{8}')", v.Local.sCompName.PSQLFriendly, "PROSPECT", v.Local.sAddress1.PSQLFriendly, v.Local.sAddress2.PSQLFriendly, v.Local.sRet(4), v.Local.sRet(5), v.Local.sRet(6), v.Local.sRet(7), v.Local.sWebAddress, v.Local.sSQL)
+					f.Intrinsic.Control.EndIf
+				'No Owner
+				f.Intrinsic.Control.Else
+					f.Intrinsic.String.Build("insert into COMPANIES ([Company Name], TYPE,  [Street Address], [Street Address 2], City, [State/Region], [Postal Code], [Phone Number], [Company Domain Name]) values ('{0}', '{1}', '{2}', '{3}', '{4}', '{5}', '{6}', '{7}', '{8}')", v.Local.sCompName.PSQLFriendly, "PROSPECT", v.Local.sAddress1.PSQLFriendly, v.Local.sAddress2.PSQLFriendly, v.Local.sRet(4), v.Local.sRet(5), v.Local.sRet(6), v.Local.sRet(7), v.Local.sWebAddress, v.Local.sSQL)
+				f.Intrinsic.Control.EndIf
+		
+				'create new HS Company
+				v.Local.sRet.Set("")
+				f.Intrinsic.String.Replace(v.Local.sSQL, "'NULL'", "NULL", v.Local.sSQL)
+				f.Automation.Hubspot.ExecuteSQLReturnID(v.Local.sSQL, v.Local.sRet)
+				
+				'update xref
+				f.Intrinsic.Control.If(v.Local.sRet,!=,"")
+					v.Local.sHSCustomerNo.Set(v.Local.sRet)
+					f.Intrinsic.String.Build("insert into GCG_6441_HS_CUSTOMER_REF values('{0}', '{1}')", v.Local.sCustomerNo, v.Local.sRet, v.Local.sSQL)
+					f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+				f.Intrinsic.Control.EndIf
+				
+				'delete queue
+				f.Intrinsic.String.Build("delete from GCG_6441_GSNEWCUS where RTRIM(CUSTID)='{0}'", v.Local.sCustomerNo, v.Local.sSQL)
+				f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+
+			f.Intrinsic.Control.EndIf
+			
+		'2B/ Company exists. Get HS CompanyID
+		f.Intrinsic.Control.Else
+			v.Local.sHSCustomerNo.Set(v.Local.sRet)
+		f.Intrinsic.Control.EndIf
+		
+		'Check if there is contact in the Quote
+		f.Intrinsic.String.Build("select top 1 CID from CRM_OPP_MASTER where OID={0}", v.Local.sOID, v.Local.sSQL)
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+		
+		'if contact exists
+		f.Intrinsic.Control.If(v.Local.sRet.Trim,!=,"")
+			'3/ Check if contact exists in XREF table
+			v.Local.sAltContactID.Set(v.Local.sRet)
+			f.Intrinsic.String.Build("select top 1 HS_CONT_ID from GCG_6441_HS_CONT_REF where RTRIM(EMAIL) in (select RTRIM(EMAIL1) from V_CONTACT where ALT_ID={0})", v.Local.sAltContactID, v.Local.sSQL)
+			
+			f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+			
+			'not in XREF
+			f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF)
+	
+				f.Intrinsic.String.Build("select NAME_FIRST, NAME_LAST, ltrim(rtrim(EMAIL1)), PHONE1, TITLE from V_CONTACT where ALT_ID={0}", v.Local.sAltContactID, v.Local.sSQL)
+				f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+				
+				f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF,=,False)
+					f.Intrinsic.String.Split(v.Local.sRet, "*!*", v.Local.sRet)
+					f.Intrinsic.String.Replace(v.Local.sRet(1), "'", " ", v.Local.sRet(1))
+					v.Local.sContact_FName.Set(v.Local.sRet(0))
+					v.Local.sContact_LName.Set(v.Local.sRet(1))
+					
+					'not exists in XREF
+					'********************
+					f.Intrinsic.String.Build("select VID HSCONTACTID from CONTACTS where EMAIL='{0}'", v.Local.sRet(2), v.Local.sSQL)
+					
+					f.Intrinsic.Control.If(v.DataTable.dtContactRef.Exists)
+						f.Data.Datatable.Close("dtContactRef")
+					f.Intrinsic.Control.EndIf
+					
+					f.Automation.Hubspot.SelectToDatatable("dtContactRef","True",v.Local.sSQL)
+					
+					f.Intrinsic.Control.If(v.DataTable.dtContactRef.RowCount,=,0)
+						f.Intrinsic.String.Build("insert into CONTACTS ([First Name], [Last Name], Email, [Phone Number], [Job Title]) values ('{0}','{1}','{2}','{3}','{4}')", v.Local.sRet(0), v.Local.sRet(1), v.Local.sRet(2), v.Local.sRet(3), v.Local.sRet(4), v.Local.sSQL)
+						f.Automation.Hubspot.ExecuteSQLReturnID(v.Local.sSQL, v.Local.sRet)
+						v.Local.sHSContactID.Set(v.Local.sRet)
+						
+						'update CRM, assigning contact to Company
+						f.Intrinsic.String.Build("INSERT INTO CrmAssociations (FromObjectId, ToObjectId, Category, DefinitionId) values ({0}, {1}, 'HUBSPOT_DEFINED', 1)", v.Local.sHSContactID, v.Local.sHSCustomerNo, v.Local.sSQL)
+						f.Automation.Hubspot.ExecuteSQL(v.Local.sSQL)
+					
+					f.Intrinsic.Control.Else
+						v.Local.sHSContactID.Set(v.DataTable.dtContactRef(0).HSCONTACTID!FieldValTrim)
+					f.Intrinsic.Control.Endif	
+					
+					'update XRef
+					f.Intrinsic.String.Build("insert into GCG_6441_HS_CONT_REF values('','{0}','{1}','{2}','{3} {4}','{5}')", v.Local.sCustomerNo, v.Local.sHSContactID, v.Local.sHSCustomerNo, v.Local.sContact_FName, v.Local.sContact_LName, v.Local.sRet(2), v.Local.sSQL)
+					f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+					
+				f.Intrinsic.Control.EndIf
+			f.Intrinsic.Control.Else
+				'contact exists
+				v.Local.sHSContactID.Set(v.Local.sRet)
+			f.Intrinsic.Control.EndIf
+		
+		f.Intrinsic.Control.EndIf
+		
+		f.Intrinsic.Control.If(v.Local.sHSContactID,=,"")
+			v.Local.sHSContactID.Set("NULL")
+		f.Intrinsic.Control.EndIf
+		
+		'Gather info
+		'DealOwner
+		f.Intrinsic.String.Build("select RTRIM(OWNERID) from GCG_6441_DEALOWNER where RTRIM(SALESPERSONCODE) in (select RTRIM(SALESPERSON) from CRM_OPP_MASTER where OID='{0}')",v.Local.sOID, v.Local.sSQL)
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sDealOwner)
+		f.Intrinsic.Control.If(v.Local.sDealOwner,=,"")
+			v.Local.sDealOwner.Set("NULL")
+		f.Intrinsic.Control.EndIf
+		
+		'replace with info from Opportunity
+		f.Intrinsic.String.Build("select RTRIM(M.ODESC), M.OREVENUE, L.VALUE LEADSOURCE, P.VALUE PROB, F.VALUE FUNNEL from CRM_OPP_MASTER M left join CRM_OPP_LEADSOURCE L on L.SEQ = M.OLEADSOURCE left join CRM_OPP_PROB P on P.ID = M.OPROB left join CRM_OPP_FUNNEL F on F.SEQ = M.OFUNNEL where OID='{0}'", v.Local.sOID, v.Local.sSQL)
+		'match Playground value - Probability
+		f.Intrinsic.String.Build("select RTRIM(M.ODESC), M.OREVENUE, L.VALUE LEADSOURCE, P.PROBABILITY PROB, F.VALUE FUNNEL, M.OSTATUS from CRM_OPP_MASTER M left join CRM_OPP_LEADSOURCE L on L.SEQ = M.OLEADSOURCE left join CRM_OPP_PROB P on P.ID = M.OPROB left join CRM_OPP_FUNNEL F on F.SEQ = M.OFUNNEL where OID='{0}'", v.Local.sOID, v.Local.sSQL)
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+		
+		f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF, =, False)
+			f.Intrinsic.String.Split(v.Local.sRet, "*!*", v.Local.sRet)
+			v.Local.sDealName.Set(v.Local.sRet(0))
+			v.Local.sExpectedRevenue.Set(v.Local.sRet(1))
+'			f.Intrinsic.String.Build("${0}", v.Local.sExpectedRevenue, v.Local.sExpectedRevenue)
+			v.Local.sLeadSource.Set(v.Local.sRet(2))
+			v.Local.sProbability.Set(v.Local.sRet(3))
+			f.Intrinsic.String.Build("{0}%", v.Local.sProbability, v.Local.sProbability)
+			v.Local.sFunnel.Set(v.Local.sRet(4))
+			'status deafault to 'Quote Created'
+'			v.Local.sStatus.Set("11864754")
+			v.Local.sStatus.Set(v.Local.sRet(5))
+			f.Intrinsic.String.Build("select STAGEID from GCG_6441_STAGE_STTS where RTRIM(STATUSID)='{0}'", v.Local.sStatus.Trim, v.Local.sSQL)
+			f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sDealStageID)
+			f.Intrinsic.Control.If(v.Local.sDealStageID,=,"")
+				v.Local.sDealStageID.Set("11864754")
+			f.Intrinsic.Control.EndIf
+			
+			'Lead Source
+			f.Intrinsic.Control.SelectCase(v.Local.sLeadSource)
+				f.Intrinsic.Control.Case("Direct Traffic")
+					v.Local.sLeadSource.Set("DIRECT_TRAFFIC")
+				f.Intrinsic.Control.Case("Paid Social")
+					v.Local.sLeadSource.Set("PAID_SOCIAL")
+				f.Intrinsic.Control.Case("Offline Sources")
+					v.Local.sLeadSource.Set("OFFLINE")
+				f.Intrinsic.Control.Case("Organic Search")
+					v.Local.sLeadSource.Set("ORGANIC_SEARCH")
+				f.Intrinsic.Control.Case("Paid Search")
+					v.Local.sLeadSource.Set("PAID_SEARCH")
+				f.Intrinsic.Control.Case("Email Marketing")
+					v.Local.sLeadSource.Set("EMAIL_MARKETING")
+				f.Intrinsic.Control.Case("Organic Social")
+					v.Local.sLeadSource.Set("SOCIAL_MEDIA")
+				f.Intrinsic.Control.Case("Referrals")
+					v.Local.sLeadSource.Set("REFERRALS")
+				f.Intrinsic.Control.Case("Other Campaigns")
+					v.Local.sLeadSource.Set("OTHER_CAMPAIGNS")
+				f.Intrinsic.Control.CaseElse
+					v.Local.sLeadSource.Set("OTHER_CAMPAIGNS")
+			f.Intrinsic.Control.EndSelect
+			
+			'TO-DO: DEAL CLOSED DATE
+			f.Intrinsic.String.Build("select OEXPDATE from CRM_OPP_MASTER where OID={0}", v.Local.sOID, v.Local.sSQL)
+			f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.dExpDate)
+			f.Intrinsic.String.Format(v.Local.dExpDate, "YYYY-MM-DD", v.Local.sExpDate)
+			
+			f.Intrinsic.String.Build("insert into DEALS ([Deal Name], [Expected Revenues], [Deal Stage], AssociatedCompanyIds, AssociatedVids, [GSSREF], [Deal owner], [Original Source Type], [Business unit], [Probability], [Close date], [Deal Description]) values('{0}', {1}, {10}, {2}, {3}, '{4}',{5}, '{6}','{7}','{8}','{9}','{11}')", v.Local.sDealName, v.Local.sExpectedRevenue, v.Local.sHSCustomerNo, v.Local.sHSContactID, v.Local.sOID, v.Local.sDealOwner, v.Local.sLeadSource, v.Local.sFunnel, v.Local.sProbability, v.Local.sExpDate, v.Local.sDealStageID.Trim, v.Local.sNotes.SQLServerFriendly, v.Local.sSQL)
+			f.Automation.Hubspot.ExecuteSQLReturnID(v.Local.sSQL, v.Local.sRet)
+				
+			'Update XRef
+			f.Intrinsic.String.Build("insert into GCG_6441_HS_QT_HDR_XREF values('{0}','{1}')", v.Local.sOID, v.Local.sRet, v.Local.sSQL)
+			f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+		f.Intrinsic.Control.EndIf
+		
+	f.Intrinsic.Control.Else
+		'1B/ XRef found. Update
+		'DEALID
+		v.Local.sHSDealID.Set(v.Local.sRet)
+
+		'replace with info from Opportunity
+		f.Intrinsic.String.Build("select RTRIM(M.ODESC), M.OREVENUE, L.VALUE LEADSOURCE, P.VALUE PROB, F.VALUE FUNNEL from CRM_OPP_MASTER M left join CRM_OPP_LEADSOURCE L on L.SEQ = M.OLEADSOURCE left join CRM_OPP_PROB P on P.ID = M.OPROB left join CRM_OPP_FUNNEL F on F.SEQ = M.OFUNNEL where OID='{0}'", v.Local.sOID, v.Local.sSQL)
+		'match Playground 
+		f.Intrinsic.String.Build("select RTRIM(M.ODESC), M.OREVENUE, L.VALUE LEADSOURCE, P.PROBABILITY PROB, F.VALUE FUNNEL, M.OSTATUS from CRM_OPP_MASTER M left join CRM_OPP_LEADSOURCE L on L.SEQ = M.OLEADSOURCE left join CRM_OPP_PROB P on P.ID = M.OPROB left join CRM_OPP_FUNNEL F on F.SEQ = M.OFUNNEL where OID='{0}'", v.Local.sOID, v.Local.sSQL)
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+		
+		f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF, =, False)
+			f.Intrinsic.String.Split(v.Local.sRet, "*!*", v.Local.sRet)
+			v.Local.sDealName.Set(v.Local.sRet(0))
+			v.Local.sExpectedRevenue.Set(v.Local.sRet(1))
+			v.Local.sLeadSource.Set(v.Local.sRet(2))
+			v.Local.sProbability.Set(v.Local.sRet(3))
+			f.Intrinsic.String.Build("{0}%", v.Local.sProbability, v.Local.sProbability)
+			
+			v.Local.sFunnel.Set(v.Local.sRet(4))
+			'status deafault to 'Quote Created'
+'			v.Local.sStatus.Set("11864754")
+			v.Local.sStatus.Set(v.Local.sRet(5))
+			f.Intrinsic.String.Build("select STAGEID from GCG_6441_STAGE_STTS where RTRIM(STATUSID)='{0}'", v.Local.sStatus.Trim, v.Local.sSQL)
+			f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sDealStageID)
+			f.Intrinsic.Control.If(v.Local.sDealStageID,=,"")
+				v.Local.sDealStageID.Set("11864754")
+			f.Intrinsic.Control.EndIf
+			
+			
+			'dealowner
+			f.Intrinsic.String.Build("select RTRIM(OWNERID) from GCG_6441_DEALOWNER where RTRIM(SALESPERSONCODE) in (select RTRIM(SALESPERSON) from CRM_OPP_MASTER where OID='{0}')",v.Local.sOID, v.Local.sSQL)
+			f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sDealOwner)
+'			f.Intrinsic.Control.If(v.Local.sDealOwner,=,"")
+'				v.Local.sDealOwner.Set("0")
+'			f.Intrinsic.Control.EndIf
+
+			'Lead Source
+			f.Intrinsic.Control.SelectCase(v.Local.sLeadSource)
+				f.Intrinsic.Control.Case("Direct Traffic")
+					v.Local.sLeadSource.Set("DIRECT_TRAFFIC")
+				f.Intrinsic.Control.Case("Paid Social")
+					v.Local.sLeadSource.Set("PAID_SOCIAL")
+				f.Intrinsic.Control.Case("Offline Sources")
+					v.Local.sLeadSource.Set("OFFLINE")
+				f.Intrinsic.Control.Case("Organic Search")
+					v.Local.sLeadSource.Set("ORGANIC_SEARCH")
+				f.Intrinsic.Control.Case("Paid Search")
+					v.Local.sLeadSource.Set("PAID_SEARCH")
+				f.Intrinsic.Control.Case("Email Marketing")
+					v.Local.sLeadSource.Set("EMAIL_MARKETING")
+				f.Intrinsic.Control.Case("Organic Social")
+					v.Local.sLeadSource.Set("SOCIAL_MEDIA")
+				f.Intrinsic.Control.Case("Referrals")
+					v.Local.sLeadSource.Set("REFERRALS")
+				f.Intrinsic.Control.Case("Other Campaigns")
+					v.Local.sLeadSource.Set("OTHER_CAMPAIGNS")
+				f.Intrinsic.Control.CaseElse
+					v.Local.sLeadSource.Set("OTHER_CAMPAIGNS")
+			f.Intrinsic.Control.EndSelect
+			
+			'TO-DO: DEAL CLOSED DATE
+			f.Intrinsic.String.Build("select OEXPDATE from CRM_OPP_MASTER where OID={0}", v.Local.sOID, v.Local.sSQL)
+			f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.dExpDate)
+			f.Intrinsic.String.Format(v.Local.dExpDate, "YYYY-MM-DD", v.Local.sExpDate)
+
+			f.Intrinsic.String.Build("update DEALS set [Expected Revenues]={1}, [Deal Stage]='11864754', [GSSREF]='{2}', [Deal Name]='{3}', [Original Source Type]='{4}', [Business Unit]='{5}', [Deal Probability]='{6}' where DealID={0}", v.Local.sHSDealID, v.Local.sExpectedRevenue, v.Local.sOID, v.Local.sDealName, v.Local.sLeadSource, v.Local.sFunnel, v.Local.sProbability, v.Local.sSQL)
+			'match Playground Field Names
+			f.Intrinsic.String.Build("update DEALS set [Expected Revenues]={1}, [Deal Stage]='{9}', [GSSREF]='{2}', [Deal Name]='{3}', [Original Source Type]='{4}', [Business Unit]='{5}', [Probability]='{6}', [Deal Owner]='{7}', [Close Date]='{8}', [Deal Description]='{10}' where DealID={0}", v.Local.sHSDealID, v.Local.sExpectedRevenue, v.Local.sOID, v.Local.sDealName, v.Local.sLeadSource, v.Local.sFunnel, v.Local.sProbability, v.Local.sDealOwner, v.Local.sExpDate, v.Local.sDealStageID.Trim, v.Local.sNotes.SQLServerFriendly, v.Local.sSQL)
+		
+			f.Automation.Hubspot.ExecuteSQL(v.Local.sSQL)
+		f.Intrinsic.Control.EndIf
+		
+	f.Intrinsic.Control.EndIf
+	
+	'Delete quote from queue
+	f.Intrinsic.String.Build("delete from GCG_6441_HS_QQUOTE where Quote_No='{0}'", v.Local.sOID, v.Local.sSQL)
+	f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+
+	f.Intrinsic.String.Build("Quote#{0} has been posted to HubSpot.", v.Local.sOID, v.Local.sLog)
+	f.Intrinsic.Control.CallSub(AddLog, "LogMsg", v.Local.sLog)
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.PostAQuoteToHS.End
+
+'write to log
+'arg: argMsg
+Program.Sub.ErrorLog.Start
+v.Local.sFileName.Declare(String)
+v.Local.isFileExists.Declare(Boolean)
+v.Local.isDirExists.Declare(Boolean)
+v.Local.sLogMsg.Declare(String)
+
+	'Add time stamp to file name
+	f.Intrinsic.String.Build("{0}\{1}\{2}", v.Caller.FilesDir, "6441", "Error Log Sync HS Company", v.Local.sFileName)
+	
+	f.Intrinsic.File.DirExists(v.Local.sFileName, v.Local.isDirExists)
+	
+	f.Intrinsic.Control.If(v.Local.isDirExists,=,False)
+		f.Intrinsic.File.CreateDir(v.Local.sFileName)
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.String.Build("{0}\{1}{2}", v.Local.sFileName, "Error Log on  ",v.Ambient.Now.FormatYYYYMMDD-HHNNSS,v.Local.sFileName)
+	
+	f.Intrinsic.String.Build("{0}{1}",v.Local.sFileName,".txt",v.Local.sFileName)
+	
+	'check file exist
+	f.Intrinsic.File.Exists(v.Local.sFileName, v.Local.isFileExists)
+	
+	f.Intrinsic.Control.If(v.Local.isFileExists,=,False)
+		f.Intrinsic.File.String2File(v.Local.sFileName, "Start Log")
+		f.Intrinsic.File.Append2File(v.Local.sFileName, v.Ambient.NewLine)
+		f.Intrinsic.File.Append2File(v.Local.sFileName, "********************")
+		f.Intrinsic.File.Append2File(v.Local.sFileName, v.Ambient.NewLine)
+		
+	f.Intrinsic.Control.EndIf
+	
+	'append
+	v.Local.sLogMsg.Set(v.Args.argMsg)
+	f.Intrinsic.String.Build("{0} {1}: {2}", v.Ambient.Now.FormatMM/DD/YYYY, v.Ambient.Now.FormatHH:NN:SS, v.Local.sLogMsg, v.Local.sLogMsg)
+	f.Intrinsic.File.Append2File(v.Local.sFileName, v.Local.sLogMsg)
+
+Program.Sub.ErrorLog.End
+
+Program.Sub.Catching.Start
+F.Intrinsic.String.Build("{3}{3}- {4} ({5}):{3}Sub: {0}{3}Error No: {1}{3}Description: {2}{3}", v.Ambient.CurrentSubroutine, v.Ambient.ErrorNumber, v.Ambient.ErrorDescription, v.Ambient.NewLine, v.Ambient.Now.FormatMM/DD/YYYY, v.Ambient.Now.FormatHH:NN:SS, v.Global.sError)
+F.Intrinsic.Control.CallSub(ErrorLog, "argMsg", v.Global.sError)
+Program.Sub.Catching.End
+
+Program.Sub.ExportLog.Start
+v.Local.sFileName.Declare(String)
+v.Local.isFileExists.Declare(Boolean)
+v.Local.isDirExists.Declare(Boolean)
+
+	'Add time stamp to file name
+	f.Intrinsic.String.Build("{0}\{1}\{2}", v.Caller.FilesDir, "6441", "Log", v.Local.sFileName)
+	
+	f.Intrinsic.File.DirExists(v.Local.sFileName, v.Local.isDirExists)
+	
+	f.Intrinsic.Control.If(v.Local.isDirExists,=,False)
+		f.Intrinsic.File.CreateDir(v.Local.sFileName)
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.String.Build("{0}\{1}{2}", v.Local.sFileName, "Log ",v.Ambient.Now.FormatYYYYMMDD-HHNNSS,v.Local.sFileName)
+	f.Intrinsic.String.Build("{0}{1}",v.Local.sFileName,".txt",v.Local.sFileName)
+	
+	'check file exist
+	f.Intrinsic.File.Exists(v.Local.sFileName, v.Local.isFileExists)
+	
+	f.Intrinsic.Control.If(v.Local.isFileExists,=,false)
+		f.Intrinsic.File.String2File(v.Local.sFileName, v.Global.sLog)
+	f.Intrinsic.Control.EndIf
+
+Program.Sub.ExportLog.End
+
+program.Sub.Unload.Start
+F.Intrinsic.Control.CallSub(ErrorLog, "argMsg", "The previous run is still running. End program and wait for next run.")
+f.Intrinsic.Control.End
+
+program.Sub.Unload.End
+
+Program.Sub.CATCHERRORORDUPL.Start
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+Program.Sub.CATCHERRORORDUPL.End
+
+Program.Sub.AddLog.Start
+f.Intrinsic.String.Build("{0}{1} ({4}):{2}{3}", v.Global.sLog,v.Ambient.Now.FormatMM/DD/YYYY, v.Args.LogMsg, v.Ambient.NewLine, v.Ambient.Now.FormatHH:NN:SS, v.Global.sLog)
+Program.Sub.AddLog.End
+
+Program.Sub.Comments.Start
+${$5$}$2.0.0.0$}$2
+${$6$}$nle$}$20220208130051103$}$kjzCRYkA6UEoRnCwndYnRbFO/s06+5AMIP4kFkmMidxnWIyyaOSzjGjgiX+IYkUn
+Program.Sub.Comments.End
