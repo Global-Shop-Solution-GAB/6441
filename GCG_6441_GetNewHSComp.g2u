@@ -1,0 +1,356 @@
+﻿Program.Sub.Preflight.Start
+Program.External.Include.Library("6013.lib")
+Program.Sub.Preflight.End
+
+'CUS: AME-HENNIG
+'ARC:6441
+
+'This program looks for new customers created in HS and sync to GSS
+'	2021-2022, NamLe
+
+'TO-DO:
+
+
+Program.Sub.Main.Start
+
+f.Intrinsic.Control.Try
+	
+	'run every 2hours
+'	f.Intrinsic.Control.CallSub(RunEvery2H)
+		
+	'1/ Connect to HS
+	Function.Automation.HubSpot.SetLoginInfo("21130dce-f802-401f-b015-4a191ef0238a","1c981cb2-578c-40b6-ac15-0b0867476758","GETANDREFRESH")
+	Function.Automation.HubSpot.SetConnectionString
+	
+	'2/ Connect DB
+	f.ODBC.Connection!Con.OpenCompanyConnection
+		'sync from GSS
+		f.Intrinsic.Control.CallSub(GetNewGSSCompany)
+		
+		'sync from HS
+		'switch to sync 1-way from GSS to HS only. Only sync new HS Company via transactions
+'		f.Intrinsic.Control.CallSub(GetNewHSCompany)
+	f.ODBC.Connection!Con.Close
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorLog, "argMsg", v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+
+Program.Sub.Main.End
+
+'Get and create new HS in GSS 
+Program.Sub.GetNewHSCompany.Start
+f.Intrinsic.Control.Try
+
+	v.Local.sSQL.Declare(String)
+	v.Local.sRet.Declare(String)
+	v.Local.iCounter.Declare(Long)
+	v.Local.sCompList.Declare(String)
+
+	v.Local.sSQL.Set("select top 10 CompanyId VID from Companies order by [Create Date] DESC")
+	
+	f.Intrinsic.Control.If(v.DataTable.dtCompany.Exists,=,True)
+		f.Data.Datatable.Close("dtCompany")
+	f.Intrinsic.Control.EndIf
+	function.Automation.HubSpot.SelectToDatatable("dtCompany", "True", v.Local.sSQL)
+	
+	'exit if no record
+	f.Intrinsic.Control.If(v.DataTable.dtCompany.RowCount,=,0)
+		f.Intrinsic.Control.ExitSub
+	f.Intrinsic.Control.EndIf
+	
+	'get dict fill
+	f.Data.Dictionary.CreateFromSQL("dictCompRef", "Con", "select RTRIM(HS_COMP_ID), RTRIM(COMP_ID) from GCG_6441_HS_CUSTOMER_REF")
+	f.Data.Dictionary.SetDefaultReturn("dictCompRef", "NEW")
+	f.Data.Datatable.AddColumn("dtCompany", "COMPID", "String")
+	f.Data.Datatable.FillFromDictionary("dtCompany", "dictCompRef", "VID", "COMPID")
+	f.Data.Dictionary.Close("dictCompRef")
+	f.Data.DataView.Create("dtCompany", "dvNewCompany", 22 , "COMPID='NEW'","")
+	f.Data.DataView.ToDataTable("dtCompany", "dvNewCompany", "dtNewComp")
+	f.Data.DataView.Close("dtCompany", "dvNewCompany")
+	f.Data.Datatable.Close("dtCompany")
+	
+	'dtNewComp contains the list of all new companies
+	f.Intrinsic.Control.If(v.DataTable.dtnewComp.RowCount,>,0)
+		f.Intrinsic.Control.For(v.Local.iCounter, 0, v.DataTable.dtNewComp.RowCount--,1)
+			f.Intrinsic.Control.If(v.Local.iCounter,=,0)
+			f.Intrinsic.String.Build("'{0}'", v.DataTable.dtNewComp(v.Local.iCounter).VID.FieldValTrim, v.Local.sCompList)
+		f.Intrinsic.Control.Else
+			f.Intrinsic.String.Build("{0}, '{1}'", v.Local.sCompList, v.DataTable.dtNewComp(v.Local.iCounter).VID.FieldValTrim, v.Local.sCompList)
+		f.Intrinsic.Control.EndIf
+		f.Intrinsic.Control.Next(v.Local.iCounter)
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.String.Build("select CompanyId COMPANY_ID, [Company Name] CUSTOMER_NAME, TYPE CUSTOMER_TYPE, [Company owner] COMPANY_OWNER, [Street Address] ADDRESS1, [Street Address 2] ADDRESS2, [State/Region] STATE_REGION, [Postal Code] ZIP_CODE, [Phone Number] PHONE, CITY from COMPANIES where CompanyId in ({0})", v.Local.sCompList, v.Local.sSQL)
+	
+	'dtCustomer contains list of new companies and their info
+	f.Intrinsic.Control.If(v.DataTable.dtCustomer.Exists)
+		f.Data.Datatable.Close("dtCustomer")
+	f.Intrinsic.Control.EndIf
+	function.Automation.HubSpot.SelectToDatatable("dtCustomer", "True", v.Local.sSQL)
+	
+	v.Local.iCounter.Set(0)
+	f.Intrinsic.Control.For(v.Local.iCounter, 0, v.DataTable.dtCustomer.RowCount--, 1)
+		f.Intrinsic.Control.CallSub(CreateCustomer, "argHSCustomerID", v.DataTable.dtCustomer(v.Local.iCounter).COMPANY_ID!FieldValTrim, "argIndex", v.Local.iCounter)
+	f.Intrinsic.Control.Next(v.Local.iCounter)
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorLog, "argMsg", v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.GetNewHSCompany.End
+
+'create new GSS Customer
+'arg: argHSCustomerID - The HS Company ID for reference
+'	  argIndex - The index of the new Company in dtCustomer table
+Program.Sub.CreateCustomer.Start
+f.Intrinsic.Control.Try
+	v.Local.sCustomerName.Declare(String)
+	v.Local.sAddress1.Declare(String)
+	v.Local.sAddress2.Declare(String)
+	v.Local.sState.Declare(String)
+	v.Local.sZip.Declare(String)
+	v.Local.sSQL.Declare(String)
+	v.Local.sNextCustomerID.Declare(String)
+	v.Local.lNextCustomerIDUpdate.Declare(Long)
+	v.Local.sNextCustomerIDUpdate.Declare(String)
+	v.Local.sHSCustomerID.Declare(String)
+	v.Local.iIndex.Declare(Long)
+	v.Local.sCompanyOwner.Declare(String)
+	v.Local.sSalespersonCode.Declare(String)
+	v.Local.sCity.Declare(String)
+	
+	v.Local.sHSCustomerID.Set(v.Args.argHSCustomerID)
+	v.Local.iIndex.Set(v.Args.argIndex)
+	
+	v.Local.sCustomerName.Set(v.DataTable.dtCustomer(v.Local.iIndex).CUSTOMER_NAME.FieldValTrim)
+	v.Local.sAddress1.Set(v.DataTable.dtCustomer(v.Local.iIndex).ADDRESS1.FieldValTrim)
+	v.Local.sAddress2.Set(v.DataTable.dtCustomer(v.Local.iIndex).ADDRESS2.FieldValTrim)
+	v.Local.sState.Set(v.DataTable.dtCustomer(v.Local.iIndex).STATE_REGION.FieldValTrim)
+	v.Local.sZip.Set(v.DataTable.dtCustomer(v.Local.iIndex).ZIP_CODE.FieldValTrim)
+	v.Local.sCity.Set(v.DataTable.dtCustomer(v.Local.iIndex).CITY.FieldValTrim)
+	v.Local.sCompanyOwner.Set(v.DataTable.dtCustomer(v.Local.iIndex).COMPANY_OWNER!FieldValTrim)
+	
+	'find next CustID
+	v.Local.sSQL.Set("select TERMS_MESSAGE from AR_TERMS where ass_sys = 'ARM'")
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sNextCustomerID)
+	f.Intrinsic.String.Replace(v.Local.sNextCustomerID, "Y", "", v.Local.sNextCustomerID)
+	
+	v.Local.lNextCustomerIDUpdate.Set(v.Local.sNextCustomerID.Long)
+	f.Intrinsic.Math.Add(v.Local.lNextCustomerIDUpdate, 1, v.Local.lNextCustomerIDUpdate)
+	f.Intrinsic.String.Concat("Y",v.Local.lNextCustomerIDUpdate.String, v.Local.sNextCustomerIDUpdate)
+	
+	f.Intrinsic.String.Build("update AR_TERMS set TERMS_MESSAGE='{0}' where ass_sys = 'ARM'", v.Local.sNextCustomerIDUpdate, v.Local.sSQL)
+	f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+	
+	'find Salesperson
+	f.Intrinsic.String.Build("select RTRIM(SALESPERSONCODE) from GCG_6441_DEALOWNER where OWNERID='{0}'", v.Local.sCompanyOwner, v.Local.sSQL)
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sSalespersonCode)
+	
+	v.Global.s6013Mode.Set("50")
+	f.Data.DataTable.AddRow("6013", "CustNum", v.Local.sNextCustomerID, "CustName", v.Local.sCustomerName, "Address1", v.Local.sAddress1, "Address2", v.Local.sAddress2, "State", v.Local.sState, "Zip", v.Local.sZip, "City", v.Local.sCity, "SalesRep", v.Local.sSalespersonCode)
+
+	f.Intrinsic.Control.CallSub(6013Sync)
+	
+	'update Xref
+	f.Intrinsic.String.Build("insert into GCG_6441_HS_CUSTOMER_REF values('{0}', '{1}')", v.Local.sNextCustomerID, v.Local.sHSCustomerID, v.Local.sSQL)
+	f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorLog, "argMsg", v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.CreateCustomer.End
+
+'Get and create new GSS company in HS
+program.Sub.GetNewGSSCompany.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	v.Local.iCounter.Declare(Long)
+	v.Local.sRet.Declare(String)
+	
+	v.Local.sSQL.Set("select RTRIM(CUSTID) CUSTID from GCG_6441_GSNEWCUS group by CUSTID order by CUSTID DESC")
+	f.Data.DataTable.CreateFromSQL("dtCust", "Con", v.Local.sSQL, True)
+	
+	'if there are new records
+	f.Intrinsic.Control.If(v.DataTable.dtCust.RowCount,>,0)
+		'loop
+		f.Intrinsic.Control.For(v.Local.iCounter, 0, v.DataTable.dtCust.RowCount--, 1)
+			'check cross-ref
+			v.Local.sRet.Set("")
+			f.Intrinsic.String.Build("select HS_COMP_ID from GCG_6441_HS_CUSTOMER_REF where COMP_ID='{0}'", v.DataTable.dtCust(v.Local.iCounter).CUSTID!FieldValTrim, v.Local.sSQL)
+			f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+			
+			'cross-ref does not exist => new customer
+			f.Intrinsic.Control.If(v.Local.sRet,=,"")
+				f.Intrinsic.Control.CallSub(CreateHSCompany, "argCustIndex", v.Local.iCounter)
+			'cross-ref exists => update info?
+			'f.Intrinsic.Control.Else
+			f.Intrinsic.Control.EndIf
+			
+		f.Intrinsic.Control.Next(v.Local.iCounter)
+		
+	f.Intrinsic.Control.EndIf
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorLog, "argMsg", v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+program.Sub.GetNewGSSCompany.End
+
+'create new HS Company from dtCust
+Program.Sub.CreateHSCompany.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	v.Local.sRet.Declare(String)
+	v.Local.iIndex.Declare(Long)
+	v.Local.sHSOwnerID.Declare(String)
+	v.Local.sCompName.Declare(String)
+	v.Local.sAddress1.Declare(String)
+	v.Local.sAddress2.Declare(String)
+	v.Local.sWebAddress.Declare(String)
+	
+	v.Local.iIndex.Set(v.Args.argCustIndex)
+	
+	f.Intrinsic.String.Build("select NAME_CUSTOMER, SALESPERSON, ADDRESS1, ADDRESS2, CITY, STATE, ZIP,  TELEPHONE from V_CUSTOMER_MASTER where CUSTOMER='{0}'", v.DataTable.dtCust(v.Local.iIndex).CUSTID!FieldValTrim, v.Local.sSQL)
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	
+	f.Intrinsic.Control.If(v.Local.sRet,!=,"")
+		f.Intrinsic.String.Split(v.Local.sRet, "*!*", v.Local.sRet)
+		v.Local.sCompName.Set(v.Local.sRet(0))
+		v.Local.sAddress1.Set(v.Local.sRet(2))
+		v.Local.sAddress2.Set(v.Local.sRet(3))
+		
+		'Web Address
+		f.Intrinsic.String.Build("select RTRIM(CUST_ADDR) from CUST_WEB_ADDR where RTRIM(CUST_ID)='{0}'", v.DataTable.dtCust(v.Local.iIndex).CUSTID!FieldValTrim, v.Local.sSQL)
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sWebAddress)
+		f.Intrinsic.Control.If(v.Local.sWebAddress,=,"")
+			v.Local.sWebAddress.Set("NULL")
+		f.Intrinsic.Control.EndIf
+		
+		'get owner/salesperson from xref
+		f.Intrinsic.Control.If(v.Local.sRet(1),!=,"")
+			f.Intrinsic.String.Build("select RTRIM(OWNERID) from GCG_6441_DEALOWNER where RTRIM(SALESPERSONCODE)='{0}'", v.Local.sRet(1).Trim, v.Local.sSQL)
+			f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sHSOwnerID)
+			
+			'Owner exists in xref
+			f.Intrinsic.Control.If(v.Local.sHSOwnerID,!=,"")
+						f.Intrinsic.String.Build("insert into COMPANIES ([Company Name], TYPE,  [Street Address], [Street Address 2], City, [State/Region], [Postal Code], [Phone Number], [company owner], [Company Domain Name]) values ('{0}', '{1}', '{2}', '{3}', '{4}', '{5}', '{6}', '{7}', {8}, '{9}')", v.Local.sCompName.PSQLFriendly, "PROSPECT", v.Local.sAddress1.PSQLFriendly, v.Local.sAddress2.PSQLFriendly, v.Local.sRet(4), v.Local.sRet(5), v.Local.sRet(6), v.Local.sRet(7), v.Local.sHSOwnerID, v.Local.sWebAddress, v.Local.sSQL)
+			
+			'xref not found
+			f.Intrinsic.Control.Else
+						f.Intrinsic.String.Build("insert into COMPANIES ([Company Name], TYPE,  [Street Address], [Street Address 2], City, [State/Region], [Postal Code], [Phone Number], [Company Domain Name]) values ('{0}', '{1}', '{2}', '{3}', '{4}', '{5}', '{6}', '{7}', '{8}')", v.Local.sCompName.PSQLFriendly, "PROSPECT", v.Local.sAddress1.PSQLFriendly, v.Local.sAddress2.PSQLFriendly, v.Local.sRet(4), v.Local.sRet(5), v.Local.sRet(6), v.Local.sRet(7), v.Local.sWebAddress, v.Local.sSQL)
+			f.Intrinsic.Control.EndIf
+		'No Owner
+		f.Intrinsic.Control.Else
+					f.Intrinsic.String.Build("insert into COMPANIES ([Company Name], TYPE,  [Street Address], [Street Address 2], City, [State/Region], [Postal Code], [Phone Number], [Company Domain Name]) values ('{0}', '{1}', '{2}', '{3}', '{4}', '{5}', '{6}', '{7}', '{8}')", v.Local.sCompName.PSQLFriendly, "PROSPECT", v.Local.sAddress1.PSQLFriendly, v.Local.sAddress2.PSQLFriendly, v.Local.sRet(4), v.Local.sRet(5), v.Local.sRet(6), v.Local.sRet(7), v.Local.sWebAddress, v.Local.sSQL)
+		f.Intrinsic.Control.EndIf
+		
+		'create new HS Company
+		v.Local.sRet.Set("")
+		f.Intrinsic.String.Replace(v.Local.sSQL, "'NULL'", "NULL", v.Local.sSQL)
+		f.Automation.Hubspot.ExecuteSQLReturnID(v.Local.sSQL, v.Local.sRet)
+		
+		'update xref
+		f.Intrinsic.Control.If(v.Local.sRet,!=,"")
+			f.Intrinsic.String.Build("insert into GCG_6441_HS_CUSTOMER_REF values('{0}', '{1}')", v.DataTable.dtCust(v.Local.iIndex).CUSTID!FieldValTrim, v.Local.sRet, v.Local.sSQL)
+			f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+		f.Intrinsic.Control.EndIf
+		
+		'delete queue
+		f.Intrinsic.String.Build("delete from GCG_6441_GSNEWCUS where RTRIM(CUSTID)='{0}'", v.DataTable.dtCust(v.Local.iIndex).CUSTID!FieldValTrim, v.Local.sSQL)
+		f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+		
+	f.Intrinsic.Control.EndIf
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorLog, "argMsg", v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.CreateHSCompany.End
+
+'Check and ensure 2 runs are 2hour apart
+Program.Sub.RunEvery2H.Start
+f.Intrinsic.Control.Try
+	v.Local.sFile.Declare(String)
+	v.Local.bExist.Declare(Boolean)
+	v.Local.sTimestamp.Declare(String)
+	v.Local.dLastRun.Declare(String)
+	v.Local.dNextRun.Declare(String)
+	
+	f.Intrinsic.String.Build("{0}\6441\TimeStamp", v.Caller.FilesDir, v.Local.sfile)
+	
+	'check dir
+	f.Intrinsic.File.DirExists(v.Local.sFile, v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist,=,False)
+		f.Intrinsic.File.CreateDir(v.Local.sFile)
+	f.Intrinsic.Control.EndIf
+	
+	'check file
+	v.Local.bExist.Set(False)
+	f.Intrinsic.String.Build("{0}\{1}", v.Local.sFile, "6441_lastrun.txt" ,v.Local.sFile)
+	f.Intrinsic.File.Exists(v.Local.sFile, v.Local.bExist)
+	
+	'file exists => read
+	f.Intrinsic.Control.If(v.Local.bExist,=,True)
+		'read
+		f.Intrinsic.File.File2String(v.Local.sFile, v.Local.sTimestamp)
+		v.Local.dLastRun.Set(v.Local.sTimestamp)
+		
+		f.Intrinsic.Date.DateAdd("H", 2, v.Local.dLastRun, v.Local.dNextRun)
+		f.Intrinsic.Control.If(v.Local.dNextRun,>,v.Ambient.Now)
+			f.Intrinsic.Control.CallSub(Unload)
+		f.Intrinsic.Control.EndIf
+		
+	'file does not exists => write
+	f.Intrinsic.Control.Else
+		f.Intrinsic.File.String2File(v.Local.sFile, v.Ambient.Now)
+	f.Intrinsic.Control.EndIf
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.RunEvery2H.End
+'write to log
+'arg: argMsg
+Program.Sub.ErrorLog.Start
+v.Local.sFileName.Declare(String)
+v.Local.isFileExists.Declare(Boolean)
+v.Local.isDirExists.Declare(Boolean)
+v.Local.sLogMsg.Declare(String)
+
+	'Add time stamp to file name
+	f.Intrinsic.String.Build("{0}\{1}\{2}", v.Caller.FilesDir, "6441", "Error Log Sync HS Company", v.Local.sFileName)
+	
+	f.Intrinsic.File.DirExists(v.Local.sFileName, v.Local.isDirExists)
+	
+	f.Intrinsic.Control.If(v.Local.isDirExists,=,False)
+		f.Intrinsic.File.CreateDir(v.Local.sFileName)
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.String.Build("{0}\{1}{2}", v.Local.sFileName, "Error Log on  ",v.Ambient.Now.FormatYYYYMMDD-HHNNSS,v.Local.sFileName)
+	
+	f.Intrinsic.String.Build("{0}{1}",v.Local.sFileName,".txt",v.Local.sFileName)
+	
+	'check file exist
+	f.Intrinsic.File.Exists(v.Local.sFileName, v.Local.isFileExists)
+	
+	f.Intrinsic.Control.If(v.Local.isFileExists,=,False)
+		f.Intrinsic.File.String2File(v.Local.sFileName, "Start Log")
+		f.Intrinsic.File.Append2File(v.Local.sFileName, v.Ambient.NewLine)
+		f.Intrinsic.File.Append2File(v.Local.sFileName, "********************")
+		f.Intrinsic.File.Append2File(v.Local.sFileName, v.Ambient.NewLine)
+		
+	f.Intrinsic.Control.EndIf
+	
+	'append
+	v.Local.sLogMsg.Set(v.Args.argMsg)
+	f.Intrinsic.String.Build("{0} {1}: {2}", v.Ambient.Now.FormatMM/DD/YYYY, v.Ambient.Now.FormatHH:NN:SS, v.Local.sLogMsg, v.Local.sLogMsg)
+	f.Intrinsic.File.Append2File(v.Local.sFileName, v.Local.sLogMsg)
+
+Program.Sub.ErrorLog.End
+
+Program.Sub.Catching.Start
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+Program.Sub.Catching.End
+
+Program.Sub.Comments.Start
+${$5$}$3.0.0.0$}$1
+${$6$}$nle$}$20220208123410448$}$kjzCRYkA6UEoRnCwndYnRbFO/s06+5AM8CUOT3/mfyhrseBF7i5P/QDETSeKSuQz
+Program.Sub.Comments.End
